@@ -12,6 +12,24 @@ def dup_key(s: Skill) -> tuple[str | None, ...]:
     return (s.kind, s.name, s.content_sha256) if s.content_sha256 else ("id", s.id)
 
 
+def same_skill(a: Skill, b: Skill) -> bool:
+    """Same kind and name: one skill in several places, whatever the content."""
+    return a.name is not None and (a.kind, a.name) == (b.kind, b.name)
+
+
+def versions(skills: list[Skill], skill: Skill) -> list[Skill]:
+    """Other entries of the same skill whose content differs (copies that drifted apart)."""
+    key = dup_key(skill)
+    seen: set[tuple[str | None, ...]] = {key}
+    out = []
+    for s in skills:
+        k = dup_key(s)
+        if k not in seen and same_skill(s, skill):
+            seen.add(k)
+            out.append(s)
+    return out
+
+
 def dedupe(skills: list[Skill]) -> list[tuple[Skill, list[Skill]]]:
     """Group identical copies (same kind, name and content) under the first occurrence.
 

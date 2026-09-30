@@ -305,12 +305,24 @@ class WebApp:
                 "overlap_there": round(m.overlap_there, 3),
                 "shared_terms": list(m.shared_terms),
                 "copies": m.copies,
-                # Same name, different content: a copy that drifted, not a separate skill.
-                "same_name": m.skill.name == skill.name,
             }
             for m in index.similar(skill)
         ]
-        return dict(_clean({"threshold": similarity.THRESHOLD, "similar": rows}))
+        # Same skill, different content: shown under Locations, not as similar skills.
+        versions = [
+            {
+                "id": m.skill.id,
+                "path": m.skill.path or m.skill.source_pointer,
+                "score": round(m.score, 3),
+                "overlap_here": round(m.overlap_here, 3),
+                "overlap_there": round(m.overlap_there, 3),
+                "copies": m.copies,
+            }
+            for m in index.versions(skill)
+        ]
+        return dict(
+            _clean({"threshold": similarity.THRESHOLD, "similar": rows, "versions": versions})
+        )
 
     def raw(self, name: str) -> bytes | None:
         path = self._snapshot_path(name)

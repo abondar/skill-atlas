@@ -10,7 +10,8 @@ from textual.widgets import Static
 from skill_atlas import similarity
 from skill_atlas.model import Snapshot
 from skill_atlas.similarity import Index, terms, words
-from skill_atlas.tui import AtlasApp, SnapshotScreen, similar_view
+from skill_atlas.tui import AtlasApp, SnapshotScreen, overview, similar_view
+from skill_atlas.views import versions
 from tests.conftest import make_tree, scan_path
 from tests.test_tui import render
 
@@ -143,7 +144,8 @@ def test_percent_rounds_down() -> None:
     assert similarity.percent(0.4) == "40%" and similarity.percent(0.29) == "29%"
 
 
-def test_same_name_copy_that_drifted_is_marked(tmp_path: Path) -> None:
+def test_a_skill_is_never_similar_to_another_version_of_itself(tmp_path: Path) -> None:
+    # One skill in two places whose content drifted apart: not two similar skills.
     snap = snapshot(
         tmp_path,
         {
@@ -152,9 +154,17 @@ def test_same_name_copy_that_drifted_is_marked(tmp_path: Path) -> None:
             "skills/pdf/SKILL.md": skill("pdf", "Works with PDF files.", PDF),
         },
     )
-    first = next(s for s in snap.skills if s.path == ".agents/skills/bump/SKILL.md")
-    out = render(similar_view(Index(snap), first))
-    assert ".claude/skills/bump/SKILL.md" in out and "same name, different content" in out
+    index = Index(snap)
+    for s in snap.skills:
+        assert all(m.skill.name != s.name for m in index.similar(s, threshold=0.0))
+    agents = next(s for s in snap.skills if s.path == ".agents/skills/bump/SKILL.md")
+    [version] = index.versions(agents)
+    assert version.skill.path == ".claude/skills/bump/SKILL.md"
+    assert version.overlap_there == 1.0 and version.overlap_here < 1.0
+    assert versions(snap.skills, agents) == [version.skill]
+    out = render(similar_view(index, agents))
+    assert "other version of this skill: .claude/skills/bump/SKILL.md" in out
+    assert "other version" in render(overview(snap, agents, [], versions(snap.skills, agents)))
 
 
 def test_external_plugins_are_not_compared(tmp_path: Path) -> None:

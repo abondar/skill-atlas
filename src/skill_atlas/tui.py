@@ -26,7 +26,7 @@ from skill_atlas import aggregate, categories, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
-from skill_atlas.views import dedupe, permalink
+from skill_atlas.views import dedupe, permalink, versions
 
 TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan", "similar")
 COMPLIANCE_FILTERS: tuple[str | None, ...] = (None, "compliant", "loadable", "broken")
@@ -51,7 +51,10 @@ def header_text(snap: Snapshot) -> Text:
 
 
 def overview(
-    snap: Snapshot, skill: Skill | None, copies: list[Skill] | None = None
+    snap: Snapshot,
+    skill: Skill | None,
+    copies: list[Skill] | None = None,
+    other_versions: list[Skill] | None = None,
 ) -> RenderableType:
     if skill is None:
         return Text("No entries match the current filters.", style="dim")
@@ -79,6 +82,10 @@ def overview(
         rows.append(("aliases", ", ".join(skill.aliases)))
     for copy in copies or []:
         rows.append(("identical copy", copy.path or copy.source_pointer))
+    for version in other_versions or []:
+        rows.append(
+            ("other version", f"{version.path or version.source_pointer} (different content)")
+        )
     for label, value in rows:
         grid.add_row(label, Text(_s(value)))
     parts: list[RenderableType] = [grid, Text("")]
@@ -186,12 +193,22 @@ def similar_view(index: similarity.Index, skill: Skill | None) -> RenderableType
     matches = index.similar(skill)
     parts: list[RenderableType] = [
         Text(
-            f"Skills at least {threshold} similar, by shared vocabulary or copied text. "
-            "Identical copies are on Overview.",
+            f"Other skills at least {threshold} similar, by shared vocabulary or copied text. "
+            "Copies of this skill are on Overview.",
             style="dim",
         ),
         Text(""),
     ]
+    for v in index.versions(skill):
+        parts.append(
+            Text(
+                f"other version of this skill: {_s(v.skill.path or v.skill.source_pointer)} "
+                f"(different content, {similarity.percent(v.overlap_here)} of this text is there)",
+                style="magenta",
+            )
+        )
+    if len(parts) > 2:
+        parts.append(Text(""))
     if not matches:
         parts.append(Text(f"No other skill in this snapshot reaches {threshold}.", style="dim"))
     for m in matches:
@@ -201,8 +218,6 @@ def similar_view(index: similarity.Index, skill: Skill | None) -> RenderableType
         head.append(f"{pct(m.score):>4} ", style=LEVEL_STYLE[m.level])
         head.append(f"{m.level:<15}", style=LEVEL_STYLE[m.level])
         head.append(_s(other.name), style="bold")
-        if other.name == skill.name:
-            head.append("  same name, different content", style="magenta")
         head.append(f"  {other.category or '—'} · {other.type}", style="dim")
         info = (
             f"     vocabulary {pct(m.topic)} · shared text: {pct(m.overlap_here)} of this skill "
@@ -413,7 +428,12 @@ class SnapshotScreen(Screen[None]):
     def show_skill(self, skill: Skill | None) -> None:
         snap = self.snapshot
         views: dict[str, RenderableType] = {
-            "overview": overview(snap, skill, self.copies.get(skill.id) if skill else None),
+            "overview": overview(
+                snap,
+                skill,
+                self.copies.get(skill.id) if skill else None,
+                versions(snap.skills, skill) if skill else None,
+            ),
             "frontmatter": frontmatter_view(skill),
             "body": body_view(skill),
             "resources": resources_view(skill),

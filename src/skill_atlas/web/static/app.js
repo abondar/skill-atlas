@@ -844,6 +844,11 @@ function openSkill(id, updateUrl = true) {
   if (updateUrl) setParams({ skill: id });
   const row = page.rows.find((r) => r.skill.id === id);
   const copies = row ? row.copies : snap.skills.filter((x) => x.id !== id && x.dup_key === s.dup_key);
+  // Same kind and name, different content: other versions of this skill, not similar skills.
+  const versions = [];
+  for (const x of snap.skills) {
+    if (x.name && x.name === s.name && x.kind === s.kind && x.dup_key !== s.dup_key && !versions.some((v) => v.dup_key === x.dup_key)) versions.push(x);
+  }
 
   const tabsEl = h("div", { class: "tabs", role: "tablist" });
   const body = h("div", { class: "drawer-body" });
@@ -869,7 +874,7 @@ function openSkill(id, updateUrl = true) {
     current = t;
     setParams({ dtab: t === "overview" ? null : t });
     drawTabs();
-    const views = { content: () => contentTab(s), files: () => filesTab(s), similar: () => similarTab(s, sim), overview: () => overviewTab(s, copies) };
+    const views = { content: () => contentTab(s), files: () => filesTab(s), similar: () => similarTab(s, sim), overview: () => overviewTab(s, copies, versions, sim) };
     body.replaceChildren(...views[t]().filter(Boolean));
     body.scrollTop = 0;
   }
@@ -904,7 +909,7 @@ function openSkill(id, updateUrl = true) {
     (err) => (sim.error = err.message),
   ).then(() => {
     if (drawer?.panel !== panel) return; // closed or replaced meanwhile
-    if (current === "similar") show("similar");
+    if (current === "similar" || current === "overview") show(current);
     else drawTabs();
   });
 }
@@ -928,11 +933,14 @@ const LEVEL_LABEL = { "near-identical": "Near-identical", strong: "Strong overla
 function similarTab(s, sim) {
   if (sim.error) return [h("div", { class: "callout bad" }, icon("alert"), h("div", {}, `Could not compare: ${sim.error}`))];
   if (!sim.data) return [h("div", { class: "loading" }, h("span", { class: "spinner" }), "Comparing with the other skills…")];
-  const { threshold, similar } = sim.data;
+  const { threshold, similar, versions } = sim.data;
   const intro = h(
     "p",
     { class: "muted" },
-    `Skills in this snapshot that are at least ${pct(threshold)} similar, by shared vocabulary or copied text. Identical copies are under Overview → Locations.`,
+    `Other skills in this snapshot that are at least ${pct(threshold)} similar, by shared vocabulary or copied text. ` +
+      (versions.length
+        ? `${plural(versions.length, "other version")} of this skill (same name, different content) ${versions.length === 1 ? "is" : "are"} under Overview → Locations.`
+        : "Copies of this skill are under Overview → Locations."),
   );
   if (!similar.length) return [intro, emptyState("layers", "No similar skills", `No other skill in this snapshot reaches ${pct(threshold)}.`)];
   return [
@@ -957,7 +965,7 @@ function similarTab(s, sim) {
               "div",
               { class: "similar-head" },
               h("span", { class: `score ${m.level}`, title: LEVEL_LABEL[m.level] }, pct(m.score)),
-              h("div", { class: "grow" }, h("div", { class: "card-title" }, m.name || "(unnamed)"), h("div", { class: m.same_name ? "card-path strong" : "card-path" }, m.path)),
+              h("div", { class: "grow" }, h("div", { class: "card-title" }, m.name || "(unnamed)"), h("div", { class: "card-path" }, m.path)),
               h("span", { class: `badge level-${m.level}` }, LEVEL_LABEL[m.level]),
             ),
             m.description ? h("div", { class: "card-desc" }, m.description) : null,
@@ -972,7 +980,6 @@ function similarTab(s, sim) {
             h(
               "div",
               { class: "badges" },
-              m.same_name ? h("span", { class: "badge warn", title: "Same name in another location, but the files differ" }, icon("layers"), "Same name, different content") : null,
               categoryBadge(m.category),
               h("span", { class: "badge outline" }, TYPE_LABEL[m.type] || m.type),
               m.copies ? h("span", { class: "badge accent" }, icon("layers"), `${m.copies + 1} locations`) : null,
@@ -1011,18 +1018,23 @@ function copyButton(text) {
   );
 }
 
-function locationRow(path, label, permalinkUrl) {
+function locationRow(path, label, permalinkUrl, tone = "") {
   return h(
     "li",
     {},
     h("span", { class: "path" }, path),
-    label ? h("span", { class: "badge" }, label) : null,
+    label ? h("span", { class: `badge ${tone}`.trim() }, label) : null,
     copyButton(path),
     permalinkUrl ? h("a", { class: "btn ghost icon-only sm", href: permalinkUrl, target: "_blank", rel: "noopener noreferrer", title: "Open on GitHub", "aria-label": "Open on GitHub" }, icon("external")) : null,
   );
 }
 
-function overviewTab(s, copies) {
+function versionLabel(v, sim) {
+  const m = sim.data?.versions.find((x) => x.id === v.id);
+  return m ? `different content · ${pct(m.overlap_here)} of this text is there` : "different content";
+}
+
+function overviewTab(s, copies, versions, sim) {
   const violations = s.compliance.violations;
   const where = s.path || s.source_pointer;
   const details = [
@@ -1050,12 +1062,13 @@ function overviewTab(s, copies) {
     h(
       "div",
       { class: "section" },
-      h("h3", {}, copies.length ? `Locations (${copies.length + 1})` : "Location"),
+      h("h3", {}, copies.length + versions.length ? `Locations (${copies.length + versions.length + 1})` : "Location"),
       h(
         "ul",
         { class: "locations" },
-        locationRow(where, copies.length ? "shown" : null, s.permalink),
+        locationRow(where, copies.length + versions.length ? "shown" : null, s.permalink),
         copies.map((c) => locationRow(c.path || c.source_pointer, "identical copy", c.permalink)),
+        versions.map((v) => locationRow(v.path || v.source_pointer, versionLabel(v, sim), v.permalink, "warn")),
         s.aliases.map((a) => locationRow(a, "symlink", null)),
       ),
     ),

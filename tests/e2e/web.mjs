@@ -164,7 +164,7 @@ try {
   await clickText("a.card", "mps");
   await waitFor(`document.querySelector(".grid .card")`, "mps skills");
   const grouped = await count(".grid .card");
-  check(grouped === 2, `copies are grouped into 2 cards (got ${grouped})`);
+  check(grouped === 3, `identical copies are grouped into 3 cards (got ${grouped})`);
   await shot("05-repo-mps");
   await click(".switch input");
   check((await count(".grid .card")) === 4, "turning grouping off shows 4 cards");
@@ -172,6 +172,11 @@ try {
   await clickText(".grid .card", "mps-actions");
   await waitFor(`document.querySelector(".drawer .locations")`, "locations");
   check((await count(".drawer .locations li")) === 3, "drawer lists 3 locations of a copied skill");
+  await waitFor(`document.querySelector(".drawer .locations")?.textContent.includes("of this text is there")`, "version share");
+  check((await text(".drawer .locations")).includes("different content"), "a drifted copy is listed as another version, with its shared text");
+  await clickText(".drawer .tabs button", "Similar");
+  await waitFor(`document.querySelector(".drawer .empty")`, "similar of mps-actions");
+  check(!(await text(".drawer-body")).includes("plugins/mcp") && (await text(".drawer-body")).includes("1 other version"), "the other version is not listed as a similar skill");
   await shot("06-drawer-overview");
   await click('.drawer button[aria-label="Close"]');
 

@@ -9,7 +9,9 @@ Two lexical signals, both deterministic and computed without a model or network:
   a longer one contains.
 
 `score = max(topic, overlap)`: either signal alone is enough to call two skills similar.
-The score is symmetric. Identical copies (same `views.dup_key`) are one entry.
+The score is symmetric. Identical copies (same `views.dup_key`) are one entry. Other
+versions of the same skill (same kind and name, different content) are not "similar
+skills": `versions()` reports them apart.
 
 This is lexical, not semantic in the embedding sense: two skills that describe the same
 task in different words score low. Skill duplicates in practice share domain terms and
@@ -25,7 +27,7 @@ from functools import lru_cache
 from hashlib import blake2b
 
 from skill_atlas.model import Skill, Snapshot
-from skill_atlas.views import dup_key
+from skill_atlas.views import dup_key, same_skill
 
 THRESHOLD = 0.4
 SHINGLE = 5
@@ -159,30 +161,47 @@ class Index:
             norm = math.sqrt(sum(w * w for _, w in top)) or 1.0
             self.vectors[key] = {t: w / norm for t, w in top}
 
-    def similar(self, skill: Skill, threshold: float = THRESHOLD) -> list[Match]:
-        """Skills at or above `threshold`, most similar first. Excludes identical copies."""
+    def _compare(self, key: Key, other: Key) -> Match:
+        vec, ovec = self.vectors[key], self.vectors[other]
+        small, large = (vec, ovec) if len(vec) <= len(ovec) else (ovec, vec)
+        contrib = {t: w * large[t] for t, w in small.items() if t in large}
+        topic = min(1.0, sum(contrib.values()))
+        sh, osh = self.shingles[key], self.shingles[other]
+        common = len(sh & osh)
+        here = common / len(sh) if sh else 0.0
+        there = common / len(osh) if osh else 0.0
+        overlap = max(here, there) if min(len(sh), len(osh)) >= MIN_SHINGLES else 0.0
+        ranked = sorted(contrib.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+        shared = tuple(self.surface.get(t, t) for t, _ in ranked)
+        group = self.groups[other]
+        return Match(group[0], max(topic, overlap), topic, here, there, shared, len(group) - 1)
+
+    def _others(self, skill: Skill) -> list[tuple[Key, Key]]:
         key = dup_key(skill)
         if key not in self.vectors:
             return []
-        vec, sh = self.vectors[key], self.shingles[key]
-        out: list[Match] = []
-        for other, ovec in self.vectors.items():
-            if other == key:
-                continue
-            small, large = (vec, ovec) if len(vec) <= len(ovec) else (ovec, vec)
-            contrib = {t: w * large[t] for t, w in small.items() if t in large}
-            topic = min(1.0, sum(contrib.values()))
-            osh = self.shingles[other]
-            common = len(sh & osh)
-            here = common / len(sh) if sh else 0.0
-            there = common / len(osh) if osh else 0.0
-            overlap = max(here, there) if min(len(sh), len(osh)) >= MIN_SHINGLES else 0.0
-            score = max(topic, overlap)
-            if score < threshold:
-                continue
-            ranked = sorted(contrib.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
-            shared = tuple(self.surface.get(t, t) for t, _ in ranked)
-            group = self.groups[other]
-            out.append(Match(group[0], score, topic, here, there, shared, len(group) - 1))
+        return [(key, other) for other in self.vectors if other != key]
+
+    def similar(self, skill: Skill, threshold: float = THRESHOLD) -> list[Match]:
+        """Other skills at or above `threshold`, most similar first.
+
+        Excludes identical copies and other versions of the same skill.
+        """
+        out = [
+            m
+            for key, other in self._others(skill)
+            if not same_skill(self.groups[other][0], skill)
+            and (m := self._compare(key, other)).score >= threshold
+        ]
         out.sort(key=lambda m: (-m.score, m.skill.name or "", m.skill.id))
+        return out
+
+    def versions(self, skill: Skill) -> list[Match]:
+        """Other versions of the same skill (same kind and name, different content)."""
+        out = [
+            self._compare(key, other)
+            for key, other in self._others(skill)
+            if same_skill(self.groups[other][0], skill)
+        ]
+        out.sort(key=lambda m: (-m.score, m.skill.path or "", m.skill.id))
         return out

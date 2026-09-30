@@ -105,7 +105,8 @@ def test_web_ui_in_a_real_browser(tmp_path: Path) -> None:
         {
             ".agents/skills/mps-actions/SKILL.md": copied,
             ".claude/skills/mps-actions/SKILL.md": copied,
-            "plugins/mcp/resources/skills/mps-actions/SKILL.md": copied,
+            # The bundled copy drifted: another version of the same skill.
+            "plugins/mcp/resources/skills/mps-actions/SKILL.md": copied + "Also menus.\n",
             ".agents/skills/pdf/SKILL.md": skill("pdf", "Works with PDF files."),
         },
     )
