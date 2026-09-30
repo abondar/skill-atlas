@@ -1,0 +1,3 @@
+/* Applied only while Playwright takes a comparison screenshot. */
+.toast-stack { display: none !important; } /* toasts expire on a timer */
+* { scrollbar-width: none !important; }

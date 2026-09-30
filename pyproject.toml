@@ -44,7 +44,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PTH", "C4"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "e2e/server.py"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]

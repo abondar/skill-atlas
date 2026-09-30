@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      update_screenshots:
+        description: "Rewrite the Playwright baselines and upload them as an artifact"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -26,14 +31,54 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: ${{ matrix.python }}
-      # The browser e2e test drives the runner's preinstalled Chrome with Node's WebSocket.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
-        env:
-          SKILL_ATLAS_REQUIRE_E2E: "1"
+
+  # Browser tests and screenshot comparison. Baselines are made and compared only here:
+  # rendering depends on the OS, fonts and Chromium, so the runner image is pinned by
+  # version (not ubuntu-latest) and Chromium by the @playwright/test version.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SKILL_ATLAS_VISUAL: "1"
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: uv sync --locked
+        working-directory: .
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Playwright tests
+        if: ${{ !inputs.update_screenshots }}
+        run: npx playwright test
+      - name: Rewrite the baselines
+        if: ${{ inputs.update_screenshots }}
+        run: npx playwright test --update-snapshots
+      - name: Upload the baselines
+        if: ${{ inputs.update_screenshots }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-baselines
+          path: e2e/tests/__screenshots__
+      # The HTML report shows expected, actual and diff images for each failed screenshot.
+      - name: Upload the report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14

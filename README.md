@@ -104,5 +104,5 @@ show as one row with `+N` in the `copies` column. Snapshots keep every copy.
 ```bash
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 UPDATE_GOLDEN=1 uv run pytest tests/test_detection.py   # regenerate golden snapshots
-uv run pytest tests/test_web_e2e.py -s                  # browser test; needs Chrome and Node 22+
+(cd e2e && npm ci && npx playwright test)             # web UI tests; screenshots are compared in CI (e2e/README.md)
 ```

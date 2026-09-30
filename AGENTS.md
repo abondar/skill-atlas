@@ -10,10 +10,11 @@ update it together with the code.
 uv sync                                            # install
 uv run skill-atlas --help                          # run
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
+(cd e2e && npm ci && npx playwright install chromium && npx playwright test)   # web UI tests
 UPDATE_GOLDEN=1 uv run pytest tests/test_detection.py   # regenerate golden snapshots
 ```
 
-All four checks must pass before a commit. Fix failures you find, including pre-existing ones.
+All four checks must pass before a commit, and the Playwright tests after a web UI change. Fix failures you find, including pre-existing ones.
 
 ## Definition of done: CI must be green
 
@@ -39,7 +40,12 @@ outside the change (for example, a runner outage), say so and give the run URL.
   with `textContent` only. `body_html` is the single `innerHTML`, rendered with raw HTML off.
   Keep the CSP strict: no inline scripts or styles.
 - Keep the TUI and the web UI at feature parity; shared view logic lives in `views.py`.
-  The web UI is a web app, not a TUI copy. After UI changes run
-  `uv run pytest tests/test_web_e2e.py -s` (headless Chrome) and update `tests/e2e/web.mjs`.
+  The web UI is a web app, not a TUI copy.
+- Web UI tests: Playwright in `e2e/` ([e2e/README.md](e2e/README.md)). After a UI change
+  run `npx playwright test` in `e2e/` and update the specs. Screenshots are compared only in
+  the CI `e2e` job. For an intended visual change, run the CI workflow manually with
+  `update_screenshots`, put the `playwright-baselines` artifact into
+  `e2e/tests/__screenshots__/` and review every changed PNG before the commit. Mark new values that differ between runs (times,
+  durations, absolute paths) with `data-volatile` in `app.js`.
 - Snapshots are immutable. Never rewrite a file in the store.
 - Tests must not use the network. GitHub tests use `respx` fakes (`tests/test_github.py`).

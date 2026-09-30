@@ -51,6 +51,12 @@ def resolve_ref(root: Path, ref: str) -> str:
     return out.strip()
 
 
+def current_branch(root: Path) -> str | None:
+    """The checked-out branch, or None for a detached HEAD."""
+    out = git(root, "symbolic-ref", "--short", "-q", "HEAD")
+    return out.strip() or None if out else None
+
+
 def is_dirty(root: Path) -> bool:
     out = git(root, "status", "--porcelain")
     return bool(out and out.strip())

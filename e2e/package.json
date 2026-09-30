@@ -1,0 +1,13 @@
+{
+  "name": "skill-atlas-e2e",
+  "private": true,
+  "description": "Playwright end-to-end and visual regression tests for the skill-atlas web UI",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.0.0"
+  }
+}

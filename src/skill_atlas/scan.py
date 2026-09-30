@@ -166,7 +166,7 @@ def prepare_local(req: ScanRequest, target: LocalTarget) -> _Prepared:
     info = gitsrc.head_commit(top)
     source = SourceInfo(
         **common,
-        resolved_ref="HEAD",
+        resolved_ref=gitsrc.current_branch(top) or "HEAD",
         commit_sha=info[0] if info else None,
         commit_date=info[1] if info else None,
         dirty=gitsrc.is_dirty(top),

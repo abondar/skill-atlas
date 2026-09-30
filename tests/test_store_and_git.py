@@ -9,7 +9,7 @@ from skill_atlas import store
 from skill_atlas.errors import StoreError, UsageError
 from skill_atlas.scan import ScanRequest, run_scan
 from tests.cases import CASES, skill
-from tests.conftest import make_git_repo, make_tree, normalized, scan_path
+from tests.conftest import git, make_git_repo, make_tree, normalized, scan_path
 
 
 def test_filename_is_sortable_and_slugged(tmp_path: Path, store_dir: Path) -> None:
@@ -105,3 +105,11 @@ def test_load_rejects_future_schema(tmp_path: Path) -> None:
     path.write_text(json.dumps({"schema_version": 99}))
     with pytest.raises(StoreError, match="unsupported schema_version"):
         store.load(path)
+
+
+def test_worktree_scan_records_the_branch(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    make_git_repo(root, {"skills/a/SKILL.md": skill("a")})
+    assert scan_path(root).source.resolved_ref == "main"
+    git(root, "checkout", "-q", "--detach")
+    assert scan_path(root).source.resolved_ref == "HEAD"
