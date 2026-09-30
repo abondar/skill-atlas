@@ -39,5 +39,7 @@ outside the change (for example, a runner outage), say so and give the run URL.
   with `textContent` only. `body_html` is the single `innerHTML`, rendered with raw HTML off.
   Keep the CSP strict: no inline scripts or styles.
 - Keep the TUI and the web UI at feature parity; shared view logic lives in `views.py`.
+  The web UI is a web app, not a TUI copy. After UI changes run
+  `uv run pytest tests/test_web_e2e.py -s` (headless Chrome) and update `tests/e2e/web.mjs`.
 - Snapshots are immutable. Never rewrite a file in the store.
 - Tests must not use the network. GitHub tests use `respx` fakes (`tests/test_github.py`).

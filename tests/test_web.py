@@ -172,3 +172,36 @@ def test_static_files(client: httpx.Client) -> None:
     assert js.status_code == 200 and js.headers["content-type"].startswith("text/javascript")
     assert client.get("/static/app.css").status_code == 200
     assert client.get("/static/../__init__.py").status_code == 404
+
+
+def test_repo_rows_carry_names_and_rescan_target(client: httpx.Client, tmp_path: Path) -> None:
+    repo = client.get("/api/repos").json()["repos"][0]
+    assert repo["rescan_target"] == str((tmp_path / "repo").resolve())
+    assert repo["source"]["name"] == "repo"
+    assert repo["meta"] is None  # local scans have no GitHub metadata
+
+
+def test_skills_across_repositories(client: httpx.Client) -> None:
+    relevant = client.get("/api/skills").json()["skills"]
+    assert sorted(s["name"] for s in relevant) == ["evil", "real", "real"]
+    assert "body" not in relevant[0]
+    everything = client.get("/api/skills", params={"category": "all"}).json()["skills"]
+    assert "fake" in {s["name"] for s in everything}
+    tests = client.get("/api/skills", params={"category": "test"}).json()["skills"]
+    assert [s["name"] for s in tests] == ["fake"]
+    assert client.get("/api/skills", params={"category": "bogus"}).status_code == 400
+
+
+def test_scan_job_reports_finished_stages(client: httpx.Client, tmp_path: Path) -> None:
+    fresh = make_tree(tmp_path / "staged", {"skills/x/SKILL.md": "---\nname: x\n---\n"})
+    r = client.post("/api/scan", json={"target": str(fresh)}, headers={"X-Skill-Atlas": "1"})
+    job = wait(client, r.json()["id"])
+    stages = [name for name, _ in job["stages"]]  # type: ignore[attr-defined]
+    assert stages[0].startswith("reading local repository")
+    assert any(s.startswith("saving snapshot") for s in stages)
+
+
+def test_favicon(client: httpx.Client) -> None:
+    for path in ("/favicon.ico", "/static/favicon.svg"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["content-type"] == "image/svg+xml"

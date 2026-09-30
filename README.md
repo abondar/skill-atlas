@@ -54,9 +54,10 @@ dropped, so `g` in the TUI or `skills --category test` shows it without a new sc
 
 ## Web UI
 
-`skill-atlas --web` serves the TUI features on `127.0.0.1` and opens the browser: repositories,
-scan history, snapshots, filters, grouped copies, tabs, permalinks, JSON export and scanning a
-new repository. Keys match the TUI. `--web-port N` fixes the port, `--no-browser` only prints
+`skill-atlas --web` opens a web app on `127.0.0.1`: a dashboard of repository cards, a
+repository page with skill cards, relevance and category filters, grouped copies, a skill
+side panel (content, locations, files), scan history, a cross-repository skill search, and a
+scan dialog with step-by-step progress. Light and dark themes follow the system. `--web-port N` fixes the port, `--no-browser` only prints
 the URL. The URL carries a one-time token that the page exchanges for a `SameSite=Strict`
 cookie; the server also checks the `Host` header and sends a strict CSP.
 
@@ -90,4 +91,5 @@ show as one row with `+N` in the `copies` column. Snapshots keep every copy.
 ```bash
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 UPDATE_GOLDEN=1 uv run pytest tests/test_detection.py   # regenerate golden snapshots
+uv run pytest tests/test_web_e2e.py -s                  # browser test; needs Chrome and Node 22+
 ```

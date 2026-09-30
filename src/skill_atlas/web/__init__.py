@@ -1,4 +1,4 @@
-"""Web UI: the same views as the TUI, served on localhost (SPEC section 8.1).
+"""Web UI served on localhost (SPEC section 8.1).
 
 Security model:
 - The server binds to 127.0.0.1 by default and checks the Host header, so a web page
@@ -43,6 +43,8 @@ CSP = (
 STATIC = {
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
+    "/static/favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "/favicon.ico": ("favicon.svg", "image/svg+xml"),
 }
 MAX_BODY = 64 * 1024
 
@@ -127,6 +129,8 @@ class Job:
     file: str | None = None
     cache_hit: bool = False
     started: float = field(default_factory=time.monotonic)
+    # Finished stages as [name, seconds]; the running stage is in `status`.
+    stages: list[list[Any]] = field(default_factory=list)
 
     def view(self) -> dict[str, Any]:
         return dict(
@@ -141,6 +145,7 @@ class Job:
                     "file": self.file,
                     "cache_hit": self.cache_hit,
                     "elapsed": round(time.monotonic() - self.started, 1),
+                    "stages": [list(s) for s in self.stages],
                 }
             )
         )
@@ -150,16 +155,24 @@ class JobProgress:
     def __init__(self, job: Job) -> None:
         self.job = job
         self._stage = ""
+        self._started = time.monotonic()
+
+    def _finish(self) -> None:
+        if self._stage:
+            self.job.stages.append([self._stage, round(time.monotonic() - self._started, 1)])
 
     def stage(self, message: str) -> None:
+        self._finish()
         self._stage = sanitize_line(message)
+        self._started = time.monotonic()
         self.job.status = self._stage
 
     def detail(self, message: str) -> None:
         self.job.status = f"{self._stage} · {sanitize_line(message)}"
 
     def done(self) -> None:
-        pass
+        self._finish()
+        self._stage = ""
 
 
 class WebApp:
@@ -183,11 +196,15 @@ class WebApp:
         for ident, items in db.by_repo().items():
             latest = items[-1].snapshot
             repo = latest.repo
+            src = latest.source
             rows.append(
                 {
                     "id": ident,
-                    "repo_key": latest.source.repo_key,
+                    "repo_key": src.repo_key,
                     "description": repo.description if repo else None,
+                    "meta": repo.model_dump(mode="json") if repo else None,
+                    # What to pass to a rescan: the URL for GitHub, the path for local scans.
+                    "rescan_target": src.url or src.local_path,
                     "scans": len(items),
                     "by_category": latest.stats.by_category,
                     "unique": len({dup_key(s) for s in latest.skills}),
@@ -200,6 +217,34 @@ class WebApp:
             )
         rows.sort(key=lambda r: r["latest"]["scanned_at"], reverse=True)
         return dict(_clean({"store": str(self.store_dir), "warnings": db.warnings, "repos": rows}))
+
+    def skills(self, category: str = "relevant") -> dict[str, Any]:
+        """Skills from the latest snapshot of every repository, without bodies."""
+        db = self._open()
+        ids = {id(item): ident for ident, items in db.by_repo().items() for item in items}
+        rows = []
+        for item in db.latest():
+            snap = item.snapshot
+            for s in snap.skills:
+                if not categories.matches(s.category, category):
+                    continue
+                rows.append(
+                    {
+                        "repo_id": ids[id(item)],
+                        "repo_key": snap.source.repo_key,
+                        "file": item.path.name,
+                        "id": s.id,
+                        "name": s.name,
+                        "description": (s.description or "")[:400],
+                        "kind": s.kind,
+                        "type": s.type,
+                        "category": s.category,
+                        "compliance": s.compliance.status,
+                        "content_sha256": s.content_sha256,
+                        "path": s.path or s.source_pointer,
+                    }
+                )
+        return dict(_clean({"skills": rows}))
 
     def _snapshot_path(self, name: str) -> Path | None:
         # Only plain file names from the store: no separators, no traversal.
@@ -346,6 +391,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         name = query.get("file", [""])[0]
         if path == "/api/repos":
             self._json(HTTPStatus.OK, app.repos())
+        elif path == "/api/skills":
+            category = query.get("category", ["relevant"])[0]
+            if category not in categories.SELECTORS:
+                self._error(HTTPStatus.BAD_REQUEST, "unknown category")
+            else:
+                self._json(HTTPStatus.OK, app.skills(category))
         elif path == "/api/snapshot":
             view = app.snapshot(name)
             if view is None:
