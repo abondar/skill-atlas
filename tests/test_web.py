@@ -205,3 +205,34 @@ def test_favicon(client: httpx.Client) -> None:
     for path in ("/favicon.ico", "/static/favicon.svg"):
         r = client.get(path)
         assert r.status_code == 200 and r.headers["content-type"] == "image/svg+xml"
+
+
+def test_similar_skills(client: httpx.Client, tmp_path: Path) -> None:
+    body = "Run the Gradle wrapper, bump the version, check plugin compatibility and tests.\n" * 5
+    root = make_tree(
+        tmp_path / "similar",
+        {
+            "skills/a/SKILL.md": f"---\nname: a\ndescription: Bumps Gradle.\n---\n{body}",
+            "skills/b/SKILL.md": f"---\nname: b\ndescription: Bumps Gradle.\n---\n{body}More.\n",
+            "skills/c/SKILL.md": "---\nname: c\ndescription: Docker images.\n---\nBuild it.\n",
+        },
+    )
+    store.save(scan_path(root), Path(client.get("/api/repos").json()["store"]))
+    repo = next(r for r in client.get("/api/repos").json()["repos"] if "similar" in r["repo_key"])
+    name = repo["latest"]["file"]
+    ids = {
+        s["name"]: s["id"]
+        for s in client.get("/api/snapshot", params={"file": name}).json()["skills"]
+    }
+    data = client.get("/api/similar", params={"file": name, "id": ids["a"]}).json()
+    assert data["threshold"] == 0.4
+    [match] = data["similar"]
+    assert match["name"] == "b" and match["level"] == "near-identical"
+    assert match["overlap_here"] == 1.0 and 0 < match["score"] <= 1
+    assert match["same_name"] is False
+    assert "gradle" in match["shared_terms"]
+    assert client.get("/api/similar", params={"file": name, "id": ids["c"]}).json()["similar"] == []
+    assert client.get("/api/similar", params={"file": name, "id": "nope"}).status_code == 404
+    assert (
+        client.get("/api/similar", params={"file": "../x.json", "id": ids["a"]}).status_code == 404
+    )

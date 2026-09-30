@@ -22,13 +22,13 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static, TabbedContent, TabPane
 
-from skill_atlas import aggregate, categories, store
+from skill_atlas import aggregate, categories, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
 from skill_atlas.views import dedupe, permalink
 
-TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan")
+TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan", "similar")
 COMPLIANCE_FILTERS: tuple[str | None, ...] = (None, "compliant", "loadable", "broken")
 KIND_FILTERS: tuple[str | None, ...] = ("skill", "agent", None)
 CATEGORY_FILTERS = ("relevant", "auxiliary", "all")
@@ -175,6 +175,51 @@ def scan_view(snap: Snapshot, path: Path | None) -> RenderableType:
     return grid
 
 
+LEVEL_STYLE = {"near-identical": "bold red", "strong": "yellow", "related": "cyan"}
+
+
+def similar_view(index: similarity.Index, skill: Skill | None) -> RenderableType:
+    """Skills of the same snapshot above the similarity threshold."""
+    if skill is None:
+        return Text("")
+    threshold = similarity.percent(similarity.THRESHOLD)
+    matches = index.similar(skill)
+    parts: list[RenderableType] = [
+        Text(
+            f"Skills at least {threshold} similar, by shared vocabulary or copied text. "
+            "Identical copies are on Overview.",
+            style="dim",
+        ),
+        Text(""),
+    ]
+    if not matches:
+        parts.append(Text(f"No other skill in this snapshot reaches {threshold}.", style="dim"))
+    for m in matches:
+        other = m.skill
+        pct = similarity.percent
+        head = Text()
+        head.append(f"{pct(m.score):>4} ", style=LEVEL_STYLE[m.level])
+        head.append(f"{m.level:<15}", style=LEVEL_STYLE[m.level])
+        head.append(_s(other.name), style="bold")
+        if other.name == skill.name:
+            head.append("  same name, different content", style="magenta")
+        head.append(f"  {other.category or '—'} · {other.type}", style="dim")
+        info = (
+            f"     vocabulary {pct(m.topic)} · shared text: {pct(m.overlap_here)} of this skill "
+            f"is in that one, {pct(m.overlap_there)} of that one is in this skill"
+        )
+        if m.copies:
+            info += f" · {m.copies + 1} locations"
+        parts += [
+            head,
+            Text(f"     {_s(other.path or other.source_pointer)}", style="dim"),
+            Text(info),
+            Text(f"     terms: {_s(', '.join(m.shared_terms))}", style="dim"),
+            Text(""),
+        ]
+    return Group(*parts)
+
+
 def repo_view(items: list[store.Loaded]) -> RenderableType:
     """Latest snapshot of one repository plus its scan history, newest first."""
     latest = items[-1]
@@ -265,6 +310,8 @@ class SnapshotScreen(Screen[None]):
         self.copies: dict[str, list[Skill]] = {}
         self._by_id = {s.id: s for s in snapshot.skills}
         self._types: tuple[str | None, ...] = (None, *sorted({s.type for s in snapshot.skills}))
+        self._index: similarity.Index | None = None  # built when the Similar tab first opens
+        self._shown: Skill | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(header_text(self.snapshot), id="header")
@@ -375,6 +422,21 @@ class SnapshotScreen(Screen[None]):
         }
         for name, renderable in views.items():
             self.query_one(f"#{name}-view", Static).update(renderable)
+        self._shown = skill
+        self._update_similar()
+
+    def _update_similar(self) -> None:
+        # Comparing costs a pass over the snapshot: only while the tab is visible.
+        view = self.query_one("#similar-view", Static)
+        if self.query_one("#tabs", TabbedContent).active != "similar":
+            view.update(Text(""))
+            return
+        if self._index is None:
+            self._index = similarity.Index(self.snapshot)
+        view.update(similar_view(self._index, self._shown))
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        self._update_similar()
 
     # --- events ---------------------------------------------------------------------
 

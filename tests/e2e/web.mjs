@@ -81,6 +81,7 @@ async function shot(name, w = 1440, hgt = 900) {
 }
 const count = (sel) => js(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
 const text = (sel) => js(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`);
+const route_has = (hash, part) => hash.split(/[?&]/).includes(part);
 const check = (cond, what) => { if (!cond) throw new Error("check failed: " + what); console.log("ok  " + what); };
 
 try {
@@ -123,6 +124,28 @@ try {
   check((await count(".drawer")) === 0, "Escape closes the drawer");
   const hashBefore = await js("location.hash");
   check(hashBefore.includes("cat=all") && !hashBefore.includes("skill="), "filters live in the URL, closed drawer removed from it");
+
+  // Similar skills: add-java has a partial duplicate, a test fixture has none
+  await clickText(".grid .card", "add-java");
+  await waitFor(`document.querySelector(".drawer")`, "add-java drawer");
+  await waitFor(`[...document.querySelectorAll(".drawer .tabs button")].some(b => b.textContent === "Similar1")`, "similar count in the tab label");
+  check(true, "the Similar tab shows the number of similar skills");
+  await clickText(".drawer .tabs button", "Similar");
+  await waitFor(`document.querySelector(".drawer .similar-item")`, "similar list");
+  const sim = await text(".drawer .similar-item");
+  check(sim.includes("split") && sim.includes("Near-identical") && sim.includes("100% of this skill is in that one"), "similar item shows the match, its level and the shared text");
+  check(route_has(await js("location.hash"), "dtab=similar"), "the drawer tab lives in the URL");
+  await shot("03a-drawer-similar");
+  await click(".drawer .similar-item");
+  await waitFor(`document.querySelector(".drawer h2")?.textContent === "split"`, "similar item opens that skill");
+  check(true, "clicking a similar skill opens it");
+  await key("Escape");
+  await clickText(".grid .card", "arithmetic");
+  await waitFor(`document.querySelector(".drawer")`, "arithmetic drawer");
+  await clickText(".drawer .tabs button", "Similar");
+  await waitFor(`document.querySelector(".drawer .empty")`, "similar empty state");
+  check((await text(".drawer .empty")).includes("No similar skills"), "a skill without matches shows an empty state");
+  await key("Escape");
 
   // Deep link reload keeps the state
   await send("Page.reload");

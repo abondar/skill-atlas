@@ -847,11 +847,30 @@ function openSkill(id, updateUrl = true) {
 
   const tabsEl = h("div", { class: "tabs", role: "tablist" });
   const body = h("div", { class: "drawer-body" });
-  const defs = [["overview", "Overview"], ["content", "Content"], ["files", `Files ${s.resources.length ? "(" + s.resources.length + ")" : ""}`.trim()]];
+  const sim = { data: null, error: null };
+  let current = "overview";
+  function defs() {
+    const n = sim.data ? sim.data.similar.length : null;
+    return [
+      ["overview", "Overview", null],
+      ["content", "Content", null],
+      ["files", "Files", s.resources.length || null],
+      ["similar", "Similar", n],
+    ];
+  }
+  function drawTabs() {
+    tabsEl.replaceChildren(
+      ...defs().map(([k, label, count]) =>
+        h("button", { class: k === current ? "active" : null, role: "tab", onclick: () => show(k) }, label, count !== null ? h("span", { class: "count" }, num(count)) : null),
+      ),
+    );
+  }
   function show(t) {
+    current = t;
     setParams({ dtab: t === "overview" ? null : t });
-    tabsEl.replaceChildren(...defs.map(([k, label]) => h("button", { class: k === t ? "active" : null, role: "tab", onclick: () => show(k) }, label)));
-    body.replaceChildren(...(t === "content" ? contentTab(s) : t === "files" ? filesTab(s) : overviewTab(s, copies)).filter(Boolean));
+    drawTabs();
+    const views = { content: () => contentTab(s), files: () => filesTab(s), similar: () => similarTab(s, sim), overview: () => overviewTab(s, copies) };
+    body.replaceChildren(...views[t]().filter(Boolean));
     body.scrollTop = 0;
   }
 
@@ -878,8 +897,98 @@ function openSkill(id, updateUrl = true) {
   document.body.append(scrim, panel);
   drawer = { scrim, panel };
   const dtab = route().params.get("dtab");
-  show(["content", "files"].includes(dtab) ? dtab : "overview");
+  show(["content", "files", "similar"].includes(dtab) ? dtab : "overview");
   panel.querySelector(".btn.ghost").focus();
+  loadSimilar(page.file, s.id).then(
+    (data) => (sim.data = data),
+    (err) => (sim.error = err.message),
+  ).then(() => {
+    if (drawer?.panel !== panel) return; // closed or replaced meanwhile
+    if (current === "similar") show("similar");
+    else drawTabs();
+  });
+}
+
+const similarCache = new Map();
+
+function loadSimilar(file, id) {
+  const key = `${file}\n${id}`;
+  if (!similarCache.has(key)) {
+    const request = api(`/api/similar?file=${encodeURIComponent(file)}&id=${encodeURIComponent(id)}`);
+    similarCache.set(key, request);
+    request.catch(() => similarCache.delete(key));
+  }
+  return similarCache.get(key);
+}
+
+// Rounded down, so a 99.6% match never reads as 100%.
+const pct = (x) => `${Math.floor(x * 100 + 1e-9)}%`;
+const LEVEL_LABEL = { "near-identical": "Near-identical", strong: "Strong overlap", related: "Related" };
+
+function similarTab(s, sim) {
+  if (sim.error) return [h("div", { class: "callout bad" }, icon("alert"), h("div", {}, `Could not compare: ${sim.error}`))];
+  if (!sim.data) return [h("div", { class: "loading" }, h("span", { class: "spinner" }), "Comparing with the other skills…")];
+  const { threshold, similar } = sim.data;
+  const intro = h(
+    "p",
+    { class: "muted" },
+    `Skills in this snapshot that are at least ${pct(threshold)} similar, by shared vocabulary or copied text. Identical copies are under Overview → Locations.`,
+  );
+  if (!similar.length) return [intro, emptyState("layers", "No similar skills", `No other skill in this snapshot reaches ${pct(threshold)}.`)];
+  return [
+    intro,
+    h(
+      "ul",
+      { class: "similar" },
+      similar.map((m) =>
+        h(
+          "li",
+          {},
+          h(
+            "button",
+            {
+              class: "similar-item",
+              onclick: () => {
+                setParams({ dtab: null });
+                openSkill(m.id);
+              },
+            },
+            h(
+              "div",
+              { class: "similar-head" },
+              h("span", { class: `score ${m.level}`, title: LEVEL_LABEL[m.level] }, pct(m.score)),
+              h("div", { class: "grow" }, h("div", { class: "card-title" }, m.name || "(unnamed)"), h("div", { class: m.same_name ? "card-path strong" : "card-path" }, m.path)),
+              h("span", { class: `badge level-${m.level}` }, LEVEL_LABEL[m.level]),
+            ),
+            m.description ? h("div", { class: "card-desc" }, m.description) : null,
+            h(
+              "dl",
+              { class: "props compact" },
+              h("dt", {}, "Vocabulary"),
+              h("dd", {}, meter(m.topic), pct(m.topic)),
+              h("dt", {}, "Shared text"),
+              h("dd", {}, `${pct(m.overlap_here)} of this skill is in that one · ${pct(m.overlap_there)} of that one is in this skill`),
+            ),
+            h(
+              "div",
+              { class: "badges" },
+              m.same_name ? h("span", { class: "badge warn", title: "Same name in another location, but the files differ" }, icon("layers"), "Same name, different content") : null,
+              categoryBadge(m.category),
+              h("span", { class: "badge outline" }, TYPE_LABEL[m.type] || m.type),
+              m.copies ? h("span", { class: "badge accent" }, icon("layers"), `${m.copies + 1} locations`) : null,
+            ),
+            m.shared_terms.length ? h("div", { class: "terms" }, h("span", { class: "muted" }, "Shared terms"), m.shared_terms.map((t) => h("code", {}, t))) : null,
+          ),
+        ),
+      ),
+    ),
+  ];
+}
+
+function meter(x) {
+  const bar = h("span", { class: "meter", role: "img", "aria-label": pct(x) }, h("span", {}));
+  bar.firstChild.style.width = pct(x); // CSSOM, allowed by the CSP
+  return bar;
 }
 
 function copyButton(text) {

@@ -77,11 +77,20 @@ def test_web_ui_in_a_real_browser(tmp_path: Path) -> None:
     assert chrome is not None and node is not None
 
     weather_body = "Get the weather.\n\n1. Extract the location.\n2. Call `scripts/weather.py`.\n"
+    java_body = (
+        "Find the Kotlin snippet in the docs, write the same example in Java next to it, "
+        "compile both with the docs Gradle task and link them from the page header.\n"
+    ) * 3
     koog = make_tree(
         tmp_path / "koog",
         {
-            ".claude/skills/add-java/SKILL.md": skill("add-java", "Adds Java snippets to docs."),
-            ".claude/skills/split/SKILL.md": skill("split", "Splits JVM and non-JVM code."),
+            ".claude/skills/add-java/SKILL.md": skill(
+                "add-java", "Adds Java snippets to docs.", java_body
+            ),
+            # A partial duplicate of add-java: the same body plus one step.
+            ".claude/skills/split/SKILL.md": skill(
+                "split", "Splits JVM and non-JVM code.", java_body + "Then split the modules.\n"
+            ),
             "integration-tests/src/jvmTest/resources/skills/weather-retrieval/SKILL.md": skill(
                 "weather-retrieval", "Retrieves the weather.", weather_body
             ),

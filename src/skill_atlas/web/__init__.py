@@ -13,6 +13,7 @@ Security model:
 
 from __future__ import annotations
 
+import functools
 import http.server
 import json
 import secrets
@@ -29,7 +30,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from markdown_it import MarkdownIt
 
-from skill_atlas import aggregate, categories, store
+from skill_atlas import aggregate, categories, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
@@ -47,6 +48,7 @@ STATIC = {
     "/favicon.ico": ("favicon.svg", "image/svg+xml"),
 }
 MAX_BODY = 64 * 1024
+INDEX_CACHE = 4  # similarity indexes kept in memory, one per snapshot file
 
 
 def _markdown() -> MarkdownIt:
@@ -184,6 +186,8 @@ class WebApp:
         self.allowed_hosts: set[str] = set()
         self.jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
+        # Snapshot files are immutable, so an index never goes stale.
+        self._indexes: dict[str, tuple[Snapshot, similarity.Index]] = {}
 
     # --- store ----------------------------------------------------------------------
 
@@ -264,6 +268,49 @@ class WebApp:
         if path is None:
             return None
         return snapshot_view(store.load(path), name)
+
+    def _index(self, path: Path) -> tuple[Snapshot, similarity.Index]:
+        with self._lock:
+            hit = self._indexes.pop(path.name, None)
+        if hit is None:
+            snap = store.load(path)
+            hit = (snap, similarity.Index(snap))
+        with self._lock:
+            self._indexes[path.name] = hit  # re-insert: most recently used last
+            while len(self._indexes) > INDEX_CACHE:
+                del self._indexes[next(iter(self._indexes))]
+        return hit
+
+    def similar(self, name: str, skill_id: str) -> dict[str, Any] | None:
+        path = self._snapshot_path(name)
+        if path is None:
+            return None
+        snap, index = self._index(path)
+        skill = next((s for s in snap.skills if s.id == skill_id), None)
+        if skill is None:
+            return None
+        rows = [
+            {
+                "id": m.skill.id,
+                "name": m.skill.name,
+                "description": (m.skill.description or "")[:400],
+                "kind": m.skill.kind,
+                "type": m.skill.type,
+                "category": m.skill.category,
+                "path": m.skill.path or m.skill.source_pointer,
+                "score": round(m.score, 3),
+                "level": m.level,
+                "topic": round(m.topic, 3),
+                "overlap_here": round(m.overlap_here, 3),
+                "overlap_there": round(m.overlap_there, 3),
+                "shared_terms": list(m.shared_terms),
+                "copies": m.copies,
+                # Same name, different content: a copy that drifted, not a separate skill.
+                "same_name": m.skill.name == skill.name,
+            }
+            for m in index.similar(skill)
+        ]
+        return dict(_clean({"threshold": similarity.THRESHOLD, "similar": rows}))
 
     def raw(self, name: str) -> bytes | None:
         path = self._snapshot_path(name)
@@ -403,6 +450,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._error(HTTPStatus.NOT_FOUND, "no such snapshot")
             else:
                 self._json(HTTPStatus.OK, view)
+        elif path == "/api/similar":
+            view = app.similar(name, query.get("id", [""])[0])
+            if view is None:
+                self._error(HTTPStatus.NOT_FOUND, "no such snapshot or skill")
+            else:
+                self._json(HTTPStatus.OK, view)
         elif path == "/api/snapshot/raw":
             raw = app.raw(name)
             if raw is None:
@@ -472,7 +525,10 @@ class Server(http.server.ThreadingHTTPServer):
         return f"http://{shown}:{port}/?token={self.app.token}"
 
 
+@functools.cache
 def _static(name: str) -> bytes:
+    # Read once per process: a running server keeps serving the UI that matches its API,
+    # even after the package on disk changes.
     return resources.files("skill_atlas.web").joinpath("static", name).read_bytes()
 
 

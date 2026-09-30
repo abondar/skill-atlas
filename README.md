@@ -61,6 +61,14 @@ scan dialog with step-by-step progress. Light and dark themes follow the system.
 the URL. The URL carries a one-time token that the page exchanges for a `SameSite=Strict`
 cookie; the server also checks the `Host` header and sends a strict CSP.
 
+## Similar skills
+
+The Similar tab (TUI key `7`, a tab in the web skill panel) lists skills of the same
+snapshot that are at least 40% similar, to find partial duplicates worth merging. The
+score is the maximum of two deterministic signals: TF-IDF cosine over name, description
+and body words, and the share of 5-word passages one body copies from the other. It is
+lexical: paraphrases in different words score low. See SPEC section 5.7.
+
 ## Store and aggregation
 
 Snapshots live in `$SKILL_ATLAS_HOME/scans/` (default `~/.local/share/skill-atlas/scans/`),
@@ -80,7 +88,7 @@ skill-atlas show github.com/anthropics/skills --plain
 ## TUI keys
 
 `j/k` move · `/` search · `g` category · `f` kind · `t` type · `c` compliance · `d` group copies ·
-`1`–`6` tabs (6 = how the snapshot was made) · `o` open on GitHub · `e` export ·
+`1`–`7` tabs (6 = how the snapshot was made, 7 = similar skills) · `o` open on GitHub · `e` export ·
 `Enter` open repository · `n` scan a new repository · `Esc` back · `q` quit
 
 Identical copies of one skill in several directories (same kind, name and content)
