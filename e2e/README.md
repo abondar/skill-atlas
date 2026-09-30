@@ -9,7 +9,9 @@
   page, rescans and scan errors.
 
 Every test starts its own server over a fixture store (`server.py`) and fails on a console
-error, an uncaught exception or a CSP violation.
+error, an uncaught exception or a CSP violation. `journey.spec.ts` bypasses the CSP:
+Playwright injects inline styles to take screenshots, and the CSP blocks them. The CSP is
+checked by `ui.spec.ts`, which takes no screenshots.
 
 ## Run
 

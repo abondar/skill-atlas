@@ -65,6 +65,7 @@ export async function login(page: Page, atlas: Atlas): Promise<void> {
 // A screenshot compared with its baseline. Values that differ between runs are masked;
 // server.py and the fixed browser clock already pin most of them.
 export async function shot(page: Page, name: string, options: { fullPage?: boolean } = {}): Promise<void> {
+  await page.mouse.move(0, 0); // no hover state from the last click
   await page.evaluate(() => document.fonts.ready);
   await expect(page).toHaveScreenshot(`${name}.png`, { mask: [page.locator("[data-volatile]")], ...options });
 }

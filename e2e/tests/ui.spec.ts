@@ -1,5 +1,6 @@
 // Functional checks of the web UI over a store with two scanned repositories (koog-like
-// and MPS-like, see server.py). The visual baselines live in journey.spec.ts.
+// and MPS-like, see server.py). The visual baselines live in journey.spec.ts. This file
+// runs with the CSP on and takes no screenshots, so any CSP violation fails it.
 import { expect, login, test } from "../fixtures";
 
 test.use({ fixture: "demo" });

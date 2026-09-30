@@ -4,7 +4,10 @@
 // catch UI drift between versions (see e2e/README.md).
 import { expect, login, shot, test } from "../fixtures";
 
-test.use({ fixture: "journey" });
+// Playwright takes screenshots by injecting inline styles (animations off, screenshot.css),
+// which the app's CSP blocks. So this file bypasses the CSP; ui.spec.ts, which takes no
+// screenshots, keeps checking that the app itself never violates it.
+test.use({ fixture: "journey", bypassCSP: true });
 
 test("analyze a repository and get the list of its skills", async ({ page, atlas }) => {
   const dialog = page.locator("dialog[open]");
