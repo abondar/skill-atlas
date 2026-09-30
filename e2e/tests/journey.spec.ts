@@ -109,6 +109,8 @@ test("analyze a repository and get the list of its skills", async ({ page, atlas
 
   await test.step("the Skills page groups copies across repositories", async () => {
     await page.locator('.nav a[href="#/skills"]').click();
+    // The repository page has a "Search skills" box too: wait for the new page first.
+    await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
     await page.getByRole("searchbox", { name: "Search skills" }).fill("ship");
     const family = page.locator(".group-list .card");
     await expect(family).toHaveCount(1);
@@ -118,6 +120,7 @@ test("analyze a repository and get the list of its skills", async ({ page, atlas
 
   await test.step("the home page lists both repositories", async () => {
     await page.locator('.nav a[href="#/"]').click();
+    await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
     await expect(page.locator("a.card")).toHaveCount(2);
     await expect(page.locator(".stats")).toContainText("Repositories");
     await shot(page, "10-home");

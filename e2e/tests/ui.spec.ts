@@ -87,6 +87,7 @@ test("copies: identical ones grouped, a drifted one listed as another version", 
 test("Skills page: search across repositories", async ({ page, atlas }) => {
   await login(page, atlas);
   await page.locator('.nav a[href="#/skills"]').click();
+  await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
   await page.getByRole("searchbox", { name: "Search skills" }).fill("pdf");
   await expect(page.locator(".group-list .card")).toHaveCount(1);
   await page.locator(".group-list .card .repos a").first().click();
@@ -117,12 +118,14 @@ test("scan from the UI, compare across repositories, rescan and errors", async (
   await page.keyboard.press("Escape");
 
   await page.locator('.nav a[href="#/skills"]').click();
+  await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
   await page.getByRole("searchbox", { name: "Search skills" }).fill("java");
   const family = page.locator(".group-list .card", { hasText: "fresh" });
   await expect(family).toContainText("koog"); // one family, found through either name
 
   // A git repository with an unchanged commit: the rescan reuses the snapshot.
   await page.locator('.nav a[href="#/"]').click();
+  await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
   await page.locator("a.card", { hasText: "fresh" }).click();
   await page.locator(".repo-head .btn", { hasText: "Rescan" }).click();
   await expect(page.locator(".toast", { hasText: "already up to date" })).toBeVisible({ timeout: 30_000 });

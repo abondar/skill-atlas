@@ -22,7 +22,10 @@ export const test = base.extend<Options & { atlas: Atlas }>({
   // A fresh server and store per test. The root path is fixed per test so that paths in
   // the UI are the same in every run.
   atlas: async ({ fixture }, use, testInfo) => {
-    const root = path.join("/tmp/skill-atlas-e2e", slug(testInfo.titlePath.slice(1).join(" ")));
+    // --repeat-each runs copies in parallel: they need their own roots. Only the first copy
+    // has the path the baselines show.
+    const repeat = testInfo.repeatEachIndex ? `-repeat${testInfo.repeatEachIndex}` : "";
+    const root = path.join("/tmp/skill-atlas-e2e", slug(testInfo.titlePath.slice(1).join(" ")) + repeat);
     const proc = spawn("uv", ["run", "--no-sync", "python", "e2e/server.py", fixture, root], {
       cwd: REPO_ROOT,
       stdio: ["ignore", "pipe", "inherit"],
