@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -24,6 +23,8 @@
       "body": "# Upper\n\nSteps.\n",
       "body_bytes": 16,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -63,6 +64,8 @@
       "body": "x\n",
       "body_bytes": 2,
       "body_lines": 2,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -101,6 +104,8 @@
       "body": "body\n",
       "body_bytes": 5,
       "body_lines": 2,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -139,6 +144,8 @@
       "body": "# long\n\nSteps.\n",
       "body_bytes": 15,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -178,6 +185,8 @@
       "body": "# meta\n\nSteps.\n",
       "body_bytes": 15,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -220,6 +229,8 @@
       "body": "# other-name\n\nSteps.\n",
       "body_bytes": 21,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -259,6 +270,8 @@
       "body": "Just a body line\n\nMore.\n",
       "body_bytes": 24,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -295,6 +308,8 @@
       "body": "---\nname: unterminated\n",
       "body_bytes": 23,
       "body_lines": 3,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "loadable",
         "violations": [
@@ -345,12 +360,16 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {
+      "catalog": 8
+    },
     "by_compliance": {
       "loadable": 8
     },
     "by_type": {
       "agent-skill": 8
     },
+    "external": 0,
     "skills": 8
   }
 }

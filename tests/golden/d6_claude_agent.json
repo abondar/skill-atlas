@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -22,6 +21,8 @@
       "body": "x\n",
       "body_bytes": 2,
       "body_lines": 2,
+      "category": "project",
+      "category_reason": "agent load root .claude/agents at the repository root",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -56,6 +57,8 @@
       "body": "No frontmatter agent\n",
       "body_bytes": 21,
       "body_lines": 2,
+      "category": "project",
+      "category_reason": "agent load root .claude/agents at the repository root",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -99,12 +102,16 @@
   },
   "stats": {
     "agents": 2,
+    "by_category": {
+      "project": 2
+    },
     "by_compliance": {
       "loadable": 2
     },
     "by_type": {
       "claude-agent": 2
     },
+    "external": 0,
     "skills": 0
   }
 }

@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from skill_atlas.categories import Category
+
 Kind = Literal["skill", "agent"]
 SkillType = Literal[
     "agent-skill",
@@ -15,6 +17,7 @@ SkillType = Literal[
     "copilot-prompt",
     "claude-agent",
     "copilot-agent",
+    "external-plugin",
 ]
 ComplianceStatus = Literal["compliant", "loadable", "broken"]
 FetchMethod = Literal["api", "clone", "fs", "git"]
@@ -29,11 +32,10 @@ class ScanOptions(_Model):
     path: str | None = None
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
-    include_fixtures: bool = False
 
     def cache_key(self) -> tuple[Any, ...]:
         # `ref` is excluded: the commit SHA already identifies the content.
-        return (self.path, tuple(self.include), tuple(self.exclude), self.include_fixtures)
+        return (self.path, tuple(self.include), tuple(self.exclude))
 
 
 class ScanInfo(_Model):
@@ -115,6 +117,9 @@ class Skill(_Model):
     dir: str | None = None
     source_pointer: str | None = None
     plugin_id: str | None = None
+    # None only in snapshots made before detectors version 2.
+    category: Category | None = None
+    category_reason: str | None = None
     name: str | None = None
     name_source: str | None = None
     description: str | None = None
@@ -137,17 +142,24 @@ class Skill(_Model):
 class Stats(_Model):
     skills: int = 0
     agents: int = 0
+    # External plugins are placeholders, not skills: counted apart.
+    external: int = 0
     by_type: dict[str, int] = Field(default_factory=dict)
     by_compliance: dict[str, int] = Field(default_factory=dict)
+    by_category: dict[str, int] = Field(default_factory=dict)
 
     @classmethod
     def of(cls, skills: list[Skill]) -> Stats:
         stats = cls()
         for s in skills:
-            if s.kind == "skill":
+            if s.category == "external":
+                stats.external += 1
+            elif s.kind == "skill":
                 stats.skills += 1
             else:
                 stats.agents += 1
+            if s.category is not None:
+                stats.by_category[s.category] = stats.by_category.get(s.category, 0) + 1
             stats.by_type[s.type] = stats.by_type.get(s.type, 0) + 1
             status = s.compliance.status
             stats.by_compliance[status] = stats.by_compliance.get(status, 0) + 1

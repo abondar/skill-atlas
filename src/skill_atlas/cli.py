@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from skill_atlas import __version__, aggregate, store
+from skill_atlas import __version__, aggregate, categories, store
 from skill_atlas.errors import AtlasError, StoreError, UsageError
 from skill_atlas.model import Snapshot
 from skill_atlas.plain import render as render_plain
@@ -88,12 +88,13 @@ def print_summary(console: Console, snapshot: Snapshot, path: Path | None, cache
     )
     if snapshot.skills:
         table = Table(box=None, header_style="bold cyan", pad_edge=False)
-        for col in ("kind", "name", "type", "compliance", "path"):
+        for col in ("kind", "name", "category", "type", "compliance", "path"):
             table.add_column(col)
         for s in snapshot.skills:
             table.add_row(
                 s.kind,
                 _cell(s.name),
+                s.category or "—",
                 s.type,
                 s.compliance.status,
                 _cell(s.path or s.source_pointer),
@@ -114,12 +115,9 @@ def scan(
     ref: Annotated[str | None, typer.Option(help="Branch, tag or commit SHA.")] = None,
     path: Annotated[str | None, typer.Option(help="Scan only this subdirectory.")] = None,
     include: Annotated[
-        list[str] | None, typer.Option(help="Glob that overrides fixture and --exclude rules.")
+        list[str] | None, typer.Option(help="Glob that overrides --exclude rules.")
     ] = None,
     exclude: Annotated[list[str] | None, typer.Option(help="Glob to exclude.")] = None,
-    include_fixtures: Annotated[
-        bool, typer.Option("--include-fixtures", help="Do not exclude test fixture dirs.")
-    ] = False,
     no_tui: Annotated[
         bool, typer.Option("--no-tui", help="Do not open the TUI; save and print a summary.")
     ] = False,
@@ -151,7 +149,6 @@ def scan(
         path=path,
         include=include or [],
         exclude=exclude or [],
-        include_fixtures=include_fixtures,
         host=host.lower(),
         force=force,
     )
@@ -218,6 +215,12 @@ def skills(
     repo: Annotated[str | None, typer.Option(help="Exact repo_key.")] = None,
     type_: Annotated[str | None, typer.Option("--type", help="Skill type.")] = None,
     kind: Annotated[Literal["skill", "agent", "all"], typer.Option(help="Entry kind.")] = "skill",
+    category: Annotated[
+        str,
+        typer.Option(
+            help="relevant, auxiliary, all, or one category: " + ", ".join(categories.SELECTORS[3:])
+        ),
+    ] = "relevant",
     group_by: Annotated[Literal["none", "name", "hash"], typer.Option(help="Group rows.")] = "none",
     all_scans: Annotated[
         bool, typer.Option("--all-scans", help="Use every snapshot, not only the latest.")
@@ -225,6 +228,9 @@ def skills(
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
 ) -> None:
     """List skills across the latest snapshot of each repository."""
+    if category not in categories.SELECTORS:
+        choices = ", ".join(categories.SELECTORS)
+        raise UsageError(f"unknown category {category!r}; use one of {choices}")
     db = aggregate.Store.open(store.scans_dir())
     _print_warnings(db.warnings)
     rows = aggregate.skill_rows(
@@ -233,6 +239,7 @@ def skills(
         repo=repo,
         type_=type_,
         kind=None if kind == "all" else kind,
+        category=category,
         all_scans=all_scans,
     )
     if group_by != "none":
@@ -275,13 +282,14 @@ def skills(
         )
         return
     table = Table(box=None, header_style="bold cyan", pad_edge=False)
-    for col in ("repo", "name", "type", "compliance", "path"):
+    for col in ("repo", "name", "category", "type", "compliance", "path"):
         table.add_column(col)
     for r in rows:
         s = r.skill
         table.add_row(
             _cell(r.repo_key),
             _cell(s.name),
+            s.category or "—",
             s.type,
             s.compliance.status,
             _cell(s.path or s.source_pointer),

@@ -96,6 +96,11 @@ def load(path: Path) -> Snapshot:
 
 def _migrate(data: dict[str, object], version: int) -> dict[str, object]:
     # Only schema version 1 exists. Future migrations chain here: v1 -> v2 -> ...
+    # Detectors v1 wrote `include_fixtures`; v2 keeps fixtures as category `test`.
+    scan = data.get("scan")
+    options = scan.get("options") if isinstance(scan, dict) else None
+    if isinstance(options, dict):
+        options.pop("include_fixtures", None)
     return data
 
 

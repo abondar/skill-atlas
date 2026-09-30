@@ -40,7 +40,17 @@ Finding zero skills is a success (exit code 0).
 | `.claude/agents/**/*.md`, plugin `agents/`, `.github/agents/*.agent.md` | agent |
 
 `AGENTS.md`, `CLAUDE.md`, Copilot instructions and Cursor rules are always-on context,
-not skills, and are ignored.
+not skills, and are ignored. Marketplace plugins with a remote source appear as
+`external` placeholders; their content is not scanned.
+
+Each entry also gets a `category` that says why it is in the repository:
+
+| Relevant | Auxiliary (hidden by default) |
+| - | - |
+| `project`, `subproject` (agent load roots), `plugin`, `external`, `bundled` (`resources/`, `assets/`), `catalog` | `test` (`tests/`, `fixtures/`, `jvmTest/`, `*-tests/`), `example`, `template`, `docs` |
+
+`category_reason` names the rule that matched. Test data is kept in the snapshot, not
+dropped, so `g` in the TUI or `skills --category test` shows it without a new scan.
 
 ## Store and aggregation
 
@@ -48,8 +58,9 @@ Snapshots live in `$SKILL_ATLAS_HOME/scans/` (default `~/.local/share/skill-atla
 one flat, time-sortable file per scan.
 
 ```bash
-skill-atlas                                        # TUI: repositories -> snapshot -> skills
+skill-atlas                                        # TUI: repositories -> snapshot -> skills; n scans a new repo
 skill-atlas repos                                  # known repositories, latest scan each
+skill-atlas skills --category test                 # relevant (default), auxiliary, all, or one category
 skill-atlas skills --group-by name                 # same skill name across repositories
 skill-atlas skills --group-by hash                 # identical copies across repositories
 skill-atlas show github.com/anthropics/skills      # TUI on a saved snapshot, offline
@@ -58,9 +69,9 @@ skill-atlas show github.com/anthropics/skills --plain
 
 ## TUI keys
 
-`j/k` move · `/` search · `f` kind · `t` type · `c` compliance · `d` group copies ·
+`j/k` move · `/` search · `g` category · `f` kind · `t` type · `c` compliance · `d` group copies ·
 `1`–`6` tabs (6 = how the snapshot was made) · `o` open on GitHub · `e` export ·
-`Enter` open repository · `Esc` back · `q` quit
+`Enter` open repository · `n` scan a new repository · `Esc` back · `q` quit
 
 Identical copies of one skill in several directories (same kind, name and content)
 show as one row with `+N` in the `copies` column. Snapshots keep every copy.

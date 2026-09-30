@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -26,6 +25,8 @@
       "body": "# shared\n\nSteps.\n",
       "body_bytes": 17,
       "body_lines": 4,
+      "category": "project",
+      "category_reason": "agent load root .agents/skills at the repository root",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -78,12 +79,16 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {
+      "project": 1
+    },
     "by_compliance": {
       "compliant": 1
     },
     "by_type": {
       "agent-skill": 1
     },
+    "external": 0,
     "skills": 1
   }
 }

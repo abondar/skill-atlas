@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -22,6 +21,8 @@
       "body": "# outer\n\nSteps.\n",
       "body_bytes": 16,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -62,6 +63,8 @@
       "body": "# inner\n\nSteps.\n",
       "body_bytes": 16,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -114,12 +117,16 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {
+      "catalog": 2
+    },
     "by_compliance": {
       "compliant": 2
     },
     "by_type": {
       "agent-skill": 2
     },
+    "external": 0,
     "skills": 2
   }
 }

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from skill_atlas import categories
 from skill_atlas.model import Skill
 from skill_atlas.store import Loaded, iter_snapshots
 
@@ -128,6 +129,7 @@ def skill_rows(
     repo: str | None = None,
     type_: str | None = None,
     kind: str | None = "skill",
+    category: str = "all",
     all_scans: bool = False,
 ) -> list[SkillRow]:
     items = store.snapshots if all_scans else store.latest()
@@ -141,6 +143,8 @@ def skill_rows(
             if kind and s.kind != kind:
                 continue
             if type_ and s.type != type_:
+                continue
+            if not categories.matches(s.category, category):
                 continue
             if needle and needle not in (s.name or "").lower():
                 continue

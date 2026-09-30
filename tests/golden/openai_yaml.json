@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -22,6 +21,8 @@
       "body": "# ui\n\nSteps.\n",
       "body_bytes": 13,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -80,12 +81,16 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {
+      "catalog": 1
+    },
     "by_compliance": {
       "compliant": 1
     },
     "by_type": {
       "agent-skill": 1
     },
+    "external": 0,
     "skills": 1
   }
 }

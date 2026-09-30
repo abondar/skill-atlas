@@ -46,13 +46,12 @@
   ],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -66,6 +65,8 @@
       "body": "# art\n\nSteps.\n",
       "body_bytes": 14,
       "body_lines": 4,
+      "category": "plugin",
+      "category_reason": "component of plugin .#art",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -100,6 +101,8 @@
       "body": "# docx\n\nSteps.\n",
       "body_bytes": 15,
       "body_lines": 4,
+      "category": "plugin",
+      "category_reason": "component of plugin .#docs",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -134,6 +137,8 @@
       "body": "Say hello.\n",
       "body_bytes": 11,
       "body_lines": 2,
+      "category": "plugin",
+      "category_reason": "component of plugin plugins/local",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -159,6 +164,46 @@
       "source_pointer": null,
       "type": "plugin-command",
       "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": null,
+      "body_bytes": null,
+      "body_lines": null,
+      "category": "external",
+      "category_reason": "marketplace entry with a remote source; content not scanned",
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": null,
+      "description": null,
+      "description_source": null,
+      "detector": "D8",
+      "dir": null,
+      "extras": {
+        "remote_source": {
+          "repo": "o/r",
+          "source": "github"
+        }
+      },
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": null,
+      "id": "external-plugin:.claude-plugin/marketplace.json#remote",
+      "kind": "skill",
+      "name": "remote",
+      "name_source": "manifest",
+      "path": null,
+      "plugin_id": ".claude-plugin/marketplace.json#remote",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": ".claude-plugin/marketplace.json#remote",
+      "type": "external-plugin",
+      "warnings": [
+        "content not scanned: remote source 'o/r'"
+      ]
     }
   ],
   "source": {
@@ -177,14 +222,20 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {
+      "external": 1,
+      "plugin": 3
+    },
     "by_compliance": {
       "compliant": 2,
-      "loadable": 1
+      "loadable": 2
     },
     "by_type": {
       "agent-skill": 2,
+      "external-plugin": 1,
       "plugin-command": 1
     },
+    "external": 1,
     "skills": 3
   }
 }

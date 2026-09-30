@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -33,8 +32,10 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {},
     "by_compliance": {},
     "by_type": {},
+    "external": 0,
     "skills": 0
   }
 }

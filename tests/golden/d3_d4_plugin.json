@@ -13,13 +13,12 @@
   ],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -33,6 +32,8 @@
       "body": "# fmt\n\nSteps.\n",
       "body_bytes": 14,
       "body_lines": 4,
+      "category": "plugin",
+      "category_reason": "component of plugin plugins/tools",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -67,6 +68,8 @@
       "body": "# lint\n\nSteps.\n",
       "body_bytes": 15,
       "body_lines": 4,
+      "category": "plugin",
+      "category_reason": "component of plugin plugins/tools",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -101,6 +104,8 @@
       "body": "x\n",
       "body_bytes": 2,
       "body_lines": 2,
+      "category": "plugin",
+      "category_reason": "component of plugin plugins/tools",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -135,6 +140,8 @@
       "body": "Explain the plugin.",
       "body_bytes": 19,
       "body_lines": 1,
+      "category": "plugin",
+      "category_reason": "component of plugin plugins/tools",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -166,6 +173,8 @@
       "body": "Print the status.\n",
       "body_bytes": 18,
       "body_lines": 2,
+      "category": "plugin",
+      "category_reason": "component of plugin plugins/tools",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -209,6 +218,9 @@
   },
   "stats": {
     "agents": 1,
+    "by_category": {
+      "plugin": 5
+    },
     "by_compliance": {
       "compliant": 2,
       "loadable": 3
@@ -219,6 +231,7 @@
       "plugin-command": 1,
       "plugin-command-inline": 1
     },
+    "external": 0,
     "skills": 4
   }
 }

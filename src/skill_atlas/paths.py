@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import fnmatch
-import itertools
 import posixpath
 
 DEFAULT_EXCLUDED_DIRS = frozenset(
     {".git", "node_modules", "vendor", ".venv", "venv", "dist", "build", "target", "__pycache__"}
 )
-_FIXTURE_PAIRS = (("test", "fixtures"), ("tests", "fixtures"))
-_FIXTURE_SEGMENTS = frozenset({"testdata", "__fixtures__"})
 
 
 def segments(path: str) -> list[str]:
@@ -47,13 +44,6 @@ def normalize_inside(base_dir: str, relative: str) -> str | None:
 
 def in_default_excluded_dir(path: str) -> bool:
     return any(s in DEFAULT_EXCLUDED_DIRS for s in segments(path)[:-1])
-
-
-def is_fixture_path(path: str) -> bool:
-    segs = segments(path)[:-1]
-    if any(s in _FIXTURE_SEGMENTS for s in segs):
-        return True
-    return any((a, b) in _FIXTURE_PAIRS for a, b in itertools.pairwise(segs))
 
 
 def matches_glob(path: str, patterns: list[str]) -> bool:

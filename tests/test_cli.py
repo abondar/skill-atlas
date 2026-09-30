@@ -84,6 +84,21 @@ def test_repos_skills_show(repo: Path) -> None:
     assert run("show", "github.com/none/none").returncode == 2
 
 
+def test_skills_category_filter(tmp_path: Path) -> None:
+    root = make_tree(tmp_path / "repo", CASES["noise"])
+    assert run("scan", str(root), "--no-tui").returncode == 0
+
+    def names(*args: str) -> list[str]:
+        proc = run("skills", "--json", *args)
+        assert proc.returncode == 0, proc.stderr
+        return sorted(s["skill"]["name"] for s in json.loads(proc.stdout))
+
+    assert names() == ["real"]  # relevant by default
+    assert names("--category", "test") == ["fake"]
+    assert names("--category", "all") == ["fake", "real"]
+    assert run("skills", "--category", "bogus").returncode == 2
+
+
 def test_terminal_escapes_are_sanitized_in_summary(tmp_path: Path) -> None:
     root = make_tree(
         tmp_path / "evil",
@@ -107,7 +122,7 @@ def test_plain_report(repo: Path) -> None:
     assert proc.returncode == 0, proc.stderr
     lines = proc.stdout.splitlines()
     assert lines[0].startswith("repo: local/repo-")
-    assert "stats: 3 skills, 0 agents, 0 plugins" in lines
+    assert "stats: 3 skills, 0 agents, 0 external, 0 plugins" in lines
     assert "## pdf" in lines
     assert "resource: .claude/skills/pdf/scripts/extract.py (11 bytes)" in lines
     assert "body:" not in lines

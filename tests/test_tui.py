@@ -152,7 +152,7 @@ def test_identical_copies_are_grouped(tmp_path: Path) -> None:
 def test_scan_view_shows_how_the_snapshot_was_made(tmp_path: Path) -> None:
     snap = evil_snapshot(tmp_path)
     out = render(scan_view(snap, tmp_path / "snap.json"))
-    for expected in ("scanned at", snap.scan.scanned_at, "fs", "fixtures", "snap.json"):
+    for expected in ("scanned at", snap.scan.scanned_at, "fs", "excluded candidates", "snap.json"):
         assert expected in out
 
 
@@ -209,6 +209,52 @@ def test_browser_on_empty_store(tmp_path: Path) -> None:
         async with app.run_test(size=(120, 30)) as pilot:
             await pilot.press("enter")  # nothing to open, must not crash
             assert isinstance(app.screen, ReposScreen)
+            await pilot.press("q")
+
+    asyncio.run(scenario())
+
+
+def test_browser_scans_a_new_repo(tmp_path: Path) -> None:
+    scans = tmp_path / "scans"
+    root = make_tree(
+        tmp_path / "fresh", {".claude/skills/new/SKILL.md": "---\nname: new\ndescription: d\n---\n"}
+    )
+
+    async def scenario() -> None:
+        app = BrowserApp(aggregate.Store.open(scans), scans)
+        async with app.run_test(size=(140, 40)) as pilot:
+            repos = app.screen
+            assert isinstance(repos, ReposScreen)
+            await pilot.press("n", *str(root), "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not repos.scanning
+            snapshot_screen = app.screen
+            assert isinstance(snapshot_screen, SnapshotScreen)  # opens the new snapshot
+            assert [s.name for s in snapshot_screen.snapshot.skills] == ["new"]
+            await pilot.press("escape")
+            await pilot.pause()
+            assert repos.query_one("#repos", DataTable).row_count == 1
+            await pilot.press("q")
+
+    asyncio.run(scenario())
+    assert len(list(scans.glob("*.json"))) == 1
+
+
+def test_browser_scan_failure_keeps_the_list(tmp_path: Path) -> None:
+    scans = saved_store(tmp_path)
+
+    async def scenario() -> None:
+        app = BrowserApp(aggregate.Store.open(scans), scans)
+        async with app.run_test(size=(140, 40)) as pilot:
+            repos = app.screen
+            assert isinstance(repos, ReposScreen)
+            await pilot.press("n", *"not a target", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not repos.scanning
+            assert repos.query_one("#repos", DataTable).row_count == 2
+            assert app.screen is repos  # last: `is` narrows the type to the base Screen
             await pilot.press("q")
 
     asyncio.run(scenario())

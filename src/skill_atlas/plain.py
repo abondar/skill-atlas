@@ -43,8 +43,13 @@ def render(
     lines += [
         f"scanned_at: {snapshot.scan.scanned_at}",
         f"snapshot: {_v(path)}",
-        f"stats: {stats.skills} skills, {stats.agents} agents, {len(snapshot.plugins)} plugins",
+        f"stats: {stats.skills} skills, {stats.agents} agents, {stats.external} external, "
+        f"{len(snapshot.plugins)} plugins",
     ]
+    if stats.by_category:
+        lines.append(
+            "categories: " + ", ".join(f"{k} {v}" for k, v in sorted(stats.by_category.items()))
+        )
     for p in snapshot.plugins:
         lines.append(f"plugin: {_v(p.id)} name={_v(p.name)}")
     for w in snapshot.scan.warnings:
@@ -64,6 +69,7 @@ def _skill_lines(s: Skill, with_body: bool) -> list[str]:
         f"id: {_v(s.id)}",
         f"kind: {s.kind}",
         f"type: {s.type} ({s.detector})",
+        f"category: {_v(s.category)} ({_v(s.category_reason)})",
         f"compliance: {s.compliance.status}",
     ]
     lines += [f"violation: {v.code}: {_v(v.message)}" for v in s.compliance.violations]

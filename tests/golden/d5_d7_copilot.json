@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
+    "detectors_version": 2,
     "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -22,6 +21,8 @@
       "body": "Plan.\n",
       "body_bytes": 6,
       "body_lines": 2,
+      "category": "project",
+      "category_reason": "agent load root .github/agents at the repository root",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -55,6 +56,8 @@
       "body": "Review.\n",
       "body_bytes": 8,
       "body_lines": 2,
+      "category": "project",
+      "category_reason": "agent load root .github/prompts at the repository root",
       "compliance": {
         "status": "loadable",
         "violations": []
@@ -100,6 +103,9 @@
   },
   "stats": {
     "agents": 1,
+    "by_category": {
+      "project": 2
+    },
     "by_compliance": {
       "loadable": 2
     },
@@ -107,6 +113,7 @@
       "copilot-agent": 1,
       "copilot-prompt": 1
     },
+    "external": 0,
     "skills": 1
   }
 }

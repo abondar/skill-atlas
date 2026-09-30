@@ -6,7 +6,9 @@ or Rich renderables, never as markup strings.
 
 from __future__ import annotations
 
+import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 from urllib.parse import quote
@@ -21,13 +23,15 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static, TabbedContent, TabPane
 
-from skill_atlas import aggregate, store
+from skill_atlas import aggregate, categories, store
+from skill_atlas.errors import AtlasError
 from skill_atlas.model import Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
 
 TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan")
 COMPLIANCE_FILTERS: tuple[str | None, ...] = (None, "compliant", "loadable", "broken")
 KIND_FILTERS: tuple[str | None, ...] = ("skill", "agent", None)
+CATEGORY_FILTERS = ("relevant", "auxiliary", "all")
 
 
 def _s(value: object) -> str:
@@ -74,6 +78,7 @@ def overview(
     rows: list[tuple[str, object]] = [
         ("name", skill.name),
         ("kind / type", f"{skill.kind} / {skill.type} ({skill.detector})"),
+        ("category", f"{skill.category} ({skill.category_reason})" if skill.category else None),
         ("compliance", skill.compliance.status),
         ("path", skill.path or skill.source_pointer),
         ("scope", skill.scope),
@@ -188,7 +193,6 @@ def scan_view(snap: Snapshot, path: Path | None) -> RenderableType:
         ("subdirectory", opts.path),
         ("include", ", ".join(opts.include) or None),
         ("exclude", ", ".join(opts.exclude) or None),
-        ("fixtures", "included" if opts.include_fixtures else "excluded"),
         ("excluded candidates", scan.excluded_candidates),
         ("scan warnings", len(scan.warnings)),
         ("snapshot file", path),
@@ -206,12 +210,14 @@ def repo_view(items: list[store.Loaded]) -> RenderableType:
     if snap.repo is not None and snap.repo.description:
         parts.append(Text(sanitize(snap.repo.description)))
     counts = f"{snap.stats.skills} skills, {snap.stats.agents} agents, {len(snap.plugins)} plugins"
+    by_category = ", ".join(f"{k} {v}" for k, v in sorted(snap.stats.by_category.items()))
     unique = len(dedupe(snap.skills))
     if unique < len(snap.skills):
         counts += f" · {unique} unique after grouping identical copies"
     parts += [
         Text(""),
         Text(counts),
+        Text(f"by category: {by_category}" if by_category else "", style="dim"),
         Text(""),
         Text("latest scan", style="bold cyan"),
         scan_view(snap, latest.path),
@@ -254,6 +260,7 @@ class SnapshotScreen(Screen[None]):
         Binding("q", "app.quit", "Quit"),
         Binding("escape", "cancel", "Back / cancel"),
         Binding("slash", "search", "Search"),
+        Binding("g", "cycle_category", "Category"),
         Binding("f", "cycle_kind", "Kind"),
         Binding("t", "cycle_type", "Type"),
         Binding("c", "cycle_compliance", "Compliance"),
@@ -276,6 +283,7 @@ class SnapshotScreen(Screen[None]):
         self.snapshot_path = snapshot_path
         self.can_go_back = can_go_back
         self.kind_filter: str | None = "skill"
+        self.category_filter = "relevant"
         self.type_filter: str | None = None
         self.compliance_filter: str | None = None
         self.query_text = ""
@@ -303,13 +311,15 @@ class SnapshotScreen(Screen[None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#table", DataTable)
-        table.add_columns("name", "copies", "type", "compliance", "path")
+        table.add_columns("name", "copies", "category", "type", "compliance", "path")
         self.refresh_rows()
         table.focus()
 
     # --- data -----------------------------------------------------------------------
 
-    def _matches(self, s: Skill) -> bool:
+    def _matches(self, s: Skill, *, check_category: bool = True) -> bool:
+        if check_category and not categories.matches(s.category, self.category_filter):
+            return False
         if self.kind_filter and s.kind != self.kind_filter:
             return False
         if self.type_filter and s.type != self.type_filter:
@@ -330,9 +340,11 @@ class SnapshotScreen(Screen[None]):
         self.copies = {s.id: copies for s, copies in grouped}
         for s in self.rows:
             extra = len(self.copies[s.id])
+            auxiliary = categories.matches(s.category, "auxiliary")
             table.add_row(
-                Text(_s(s.name)),
+                Text(_s(s.name), style="dim" if auxiliary else ""),
                 Text(f"+{extra}" if extra else "", style="magenta"),
+                Text(s.category or "—", style="dim" if auxiliary else "cyan"),
                 Text(s.type),
                 Text(
                     s.compliance.status,
@@ -348,6 +360,7 @@ class SnapshotScreen(Screen[None]):
 
     def _update_status(self) -> None:
         filters = [
+            f"category={self.category_filter}",
             f"kind={self.kind_filter or 'all'}",
             f"type={self.type_filter or 'all'}",
             f"compliance={self.compliance_filter or 'all'}",
@@ -360,6 +373,14 @@ class SnapshotScreen(Screen[None]):
         text = f"{shown}/{len(self.snapshot.skills)} shown"
         if shown > len(self.rows):
             text += f" in {len(self.rows)} rows"
+        hidden = sum(
+            1
+            for s in self.snapshot.skills
+            if self._matches(s, check_category=False)
+            and not categories.matches(s.category, self.category_filter)
+        )
+        if hidden:
+            text += f" · {hidden} hidden by category (g)"
         text += " · " + " ".join(filters)
         self.query_one("#status", Static).update(Text(f"{text} · {where}"))
 
@@ -424,6 +445,11 @@ class SnapshotScreen(Screen[None]):
         idx = options.index(current) if current in options else -1
         return options[(idx + 1) % len(options)]
 
+    def action_cycle_category(self) -> None:
+        idx = CATEGORY_FILTERS.index(self.category_filter)
+        self.category_filter = CATEGORY_FILTERS[(idx + 1) % len(CATEGORY_FILTERS)]
+        self.refresh_rows()
+
     def action_cycle_kind(self) -> None:
         self.kind_filter = self._cycle(KIND_FILTERS, self.kind_filter)
         self.refresh_rows()
@@ -483,14 +509,37 @@ class SnapshotScreen(Screen[None]):
         self.notify(f"Saved {path}")
 
 
+class StatusProgress:
+    """Scan progress for the TUI: one status line, updated from the scan thread."""
+
+    def __init__(self, post: Callable[[str], None]) -> None:
+        self.post = post
+        self._stage = ""
+        self._last = 0.0
+
+    def stage(self, message: str) -> None:
+        self._stage = sanitize_line(message)
+        self._last = time.monotonic()
+        self.post(self._stage)
+
+    def detail(self, message: str) -> None:
+        now = time.monotonic()
+        if now - self._last >= 0.1:  # git progress can emit hundreds of lines per second
+            self._last = now
+            self.post(f"{self._stage} · {sanitize_line(message)}")
+
+    def done(self) -> None:
+        pass
+
+
 class ReposScreen(Screen[None]):
     """Known repositories, latest scan first. Enter opens the latest snapshot."""
 
     DEFAULT_CSS = """
     #header { height: 1; padding: 0 1; background: $boost; }
     #left { width: 50%; min-width: 30; border-right: vkey $panel-lighten-2; }
-    #search { display: none; }
-    #search.visible { display: block; }
+    #search, #scan-target { display: none; }
+    #search.visible, #scan-target.visible { display: block; }
     #repos { height: 1fr; }
     #details { width: 1fr; padding: 0 1; }
     #status { height: 1; padding: 0 1; color: $text-muted; }
@@ -499,6 +548,7 @@ class ReposScreen(Screen[None]):
         Binding("q", "app.quit", "Quit"),
         Binding("enter", "open", "Open", show=True),
         Binding("slash", "search", "Search"),
+        Binding("n", "new_scan", "Scan repo"),
         Binding("escape", "cancel", "Cancel", show=False),
         Binding("j", "cursor(1)", "Down", show=False),
         Binding("k", "cursor(-1)", "Up", show=False),
@@ -508,17 +558,28 @@ class ReposScreen(Screen[None]):
         super().__init__()
         self.store_dir = store_dir
         self.query_text = ""
-        groups = db.by_repo().values()
-        self.repos: list[list[store.Loaded]] = sorted(
-            groups, key=lambda items: items[-1].snapshot.scan.scanned_at, reverse=True
-        )
+        self.scanning = False
+        self.repos: list[list[store.Loaded]] = []
         self.rows: list[list[store.Loaded]] = []
+        self._load(db)
+
+    def _load(self, db: aggregate.Store) -> None:
+        self.repos = sorted(
+            db.by_repo().values(),
+            key=lambda items: items[-1].snapshot.scan.scanned_at,
+            reverse=True,
+        )
+
+    def _header(self) -> Text:
+        return Text(
+            f"skill-atlas  ·  {len(self.repos)} repositories  ·  {self.store_dir}", style="bold"
+        )
 
     def compose(self) -> ComposeResult:
-        count = len(self.repos)
-        yield Static(
-            Text(f"skill-atlas  ·  {count} repositories  ·  {self.store_dir}", style="bold"),
-            id="header",
+        yield Static(self._header(), id="header")
+        yield Input(
+            placeholder="scan: GitHub URL, owner/repo or local path (Enter to scan, Esc to cancel)",
+            id="scan-target",
         )
         with Horizontal():
             with Vertical(id="left"):
@@ -555,8 +616,14 @@ class ReposScreen(Screen[None]):
                 key=str(i),
             )
         self.show_repo(self.rows[0] if self.rows else None)
-        status = f"{len(self.rows)}/{len(self.repos)} shown · Enter opens the latest snapshot"
-        self.query_one("#status", Static).update(Text(status))
+        if not self.scanning:
+            self.set_status(
+                f"{len(self.rows)}/{len(self.repos)} shown · Enter opens the latest snapshot"
+                " · n scans a new repository"
+            )
+
+    def set_status(self, text: str) -> None:
+        self.query_one("#status", Static).update(Text(text))
 
     def show_repo(self, items: list[store.Loaded] | None) -> None:
         view: RenderableType
@@ -566,7 +633,7 @@ class ReposScreen(Screen[None]):
             view = Text("No repositories match the search.", style="dim")
         else:
             view = Text(
-                f"No snapshots in {self.store_dir}.\nRun `skill-atlas scan <repo>` first.",
+                f"No snapshots in {self.store_dir}.\nPress n to scan a repository.",
                 style="dim",
             )
         self.query_one("#details-view", Static).update(view)
@@ -583,11 +650,75 @@ class ReposScreen(Screen[None]):
         self.action_open()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        self.query_text = event.value
-        self.refresh_rows()
+        if event.input.id == "search":
+            self.query_text = event.value
+            self.refresh_rows()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "scan-target":
+            target = event.value.strip()
+            if not target:
+                return
+            event.input.value = ""
+            event.input.remove_class("visible")
+            self._start_scan(target)
         self.query_one("#repos", DataTable).focus()
+
+    # --- scanning -------------------------------------------------------------------
+
+    def action_new_scan(self) -> None:
+        if self.scanning:
+            self.notify("A scan is already running.", severity="warning")
+            return
+        widget = self.query_one("#scan-target", Input)
+        widget.add_class("visible")
+        widget.focus()
+
+    def _start_scan(self, target: str) -> None:
+        self.scanning = True
+        self.set_status(f"scanning {sanitize_line(target)} …")
+        self.run_worker(
+            lambda: self._scan_thread(target), thread=True, exclusive=True, group="scan"
+        )
+
+    def _scan_thread(self, target: str) -> None:
+        # Runs in a worker thread: touch widgets only through call_from_thread.
+        from skill_atlas.scan import ScanRequest, run_scan
+
+        call = self.app.call_from_thread
+        progress = StatusProgress(lambda text: call(self.set_status, f"scanning · {text}"))
+        try:
+            req = ScanRequest(target=target)
+            outcome = run_scan(req, store_dir=self.store_dir, progress=progress)
+        except AtlasError as exc:
+            call(self._scan_failed, str(exc))
+            return
+        except Exception as exc:  # a crash here must not take the whole TUI down
+            call(self._scan_failed, f"unexpected error: {exc!r}")
+            return
+        call(self._scan_finished, outcome.snapshot.source.repo_key, outcome.cache_hit)
+
+    def _scan_failed(self, message: str) -> None:
+        self.scanning = False
+        self.refresh_rows()
+        self.notify(sanitize_line(message), title="Scan failed", severity="error", timeout=10)
+
+    def _scan_finished(self, repo_key: str, cache_hit: bool) -> None:
+        self.scanning = False
+        self._load(aggregate.Store.open(self.store_dir))
+        self.query_one("#header", Static).update(self._header())
+        self.query_text = ""
+        search = self.query_one("#search", Input)
+        search.value = ""
+        search.remove_class("visible")
+        self.refresh_rows()
+        keys = [items[-1].snapshot.source.repo_key for items in self.rows]
+        row = keys.index(repo_key) if repo_key in keys else None
+        note = "cached snapshot" if cache_hit else "new snapshot"
+        self.notify(f"{sanitize_line(repo_key)}: {note}")
+        if row is not None:
+            self.query_one("#repos", DataTable).move_cursor(row=row)
+            self.action_open()
 
     def action_open(self) -> None:
         items = self.current()
@@ -602,10 +733,15 @@ class ReposScreen(Screen[None]):
         search.focus()
 
     def action_cancel(self) -> None:
-        search = self.query_one("#search", Input)
-        search.remove_class("visible")
-        if search.value:
-            search.value = ""
+        target = self.query_one("#scan-target", Input)
+        if target.has_focus:
+            target.remove_class("visible")
+            target.value = ""
+        else:
+            search = self.query_one("#search", Input)
+            search.remove_class("visible")
+            if search.value:
+                search.value = ""
         self.query_one("#repos", DataTable).focus()
 
     def action_cursor(self, delta: int) -> None:

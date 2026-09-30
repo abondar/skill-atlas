@@ -156,20 +156,21 @@ def test_nested_skills_are_separate(tmp_path: Path) -> None:
     assert [r.path for r in inner.resources] == ["skills/outer/inner/data.txt"]
 
 
-def test_noise_is_excluded(tmp_path: Path) -> None:
+def test_noise_is_excluded_and_fixtures_are_kept_as_test(tmp_path: Path) -> None:
     snap = _scan(tmp_path, "noise")
-    assert [s.path for s in snap.skills] == ["skills/real/SKILL.md"]
-    assert snap.scan.excluded_candidates == 1  # the fixture; node_modules is not counted
+    skills = _by_path(snap)
+    assert sorted(skills) == ["skills/real/SKILL.md", "tests/fixtures/skills/fake/SKILL.md"]
+    assert skills["tests/fixtures/skills/fake/SKILL.md"].category == "test"
+    assert snap.scan.excluded_candidates == 0  # node_modules is not counted
+    assert snap.stats.by_category == {"catalog": 1, "test": 1}
 
 
-def test_include_fixtures_and_globs(tmp_path: Path) -> None:
+def test_exclude_and_include_globs(tmp_path: Path) -> None:
     root = make_tree(tmp_path / "noise", CASES["noise"])
-    with_fixtures = scan_path(root, include_fixtures=True)
-    assert len(with_fixtures.skills) == 2
-    excluded = scan_path(root, exclude=["skills/*"])
+    excluded = scan_path(root, exclude=["skills/*", "tests/*"])
     assert excluded.skills == []
     assert excluded.scan.excluded_candidates == 2
-    included = scan_path(root, include=["tests/fixtures/skills/fake"])
+    included = scan_path(root, exclude=["tests/*"], include=["tests/fixtures/skills/fake"])
     assert len(included.skills) == 2
 
 

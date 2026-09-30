@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
-from skill_atlas import frontmatter, paths, plugins
+from skill_atlas import categories, frontmatter, paths, plugins
 from skill_atlas.model import (
     Compliance,
     Kind,
@@ -132,6 +132,7 @@ class Scanner:
         self.warnings: list[str] = []
         self._dir_cache: dict[str, list[TreeEntry]] = {}
         self._cache: dict[str, bytes | Exception] = {}
+        self._plugin_roots: dict[str, str | None] = {}
 
     # --- tree assembly -------------------------------------------------------------
 
@@ -220,9 +221,7 @@ class Scanner:
         for path, f in files.items():
             if paths.in_default_excluded_dir(path):
                 continue
-            excluded = (
-                not opts.include_fixtures and paths.is_fixture_path(path)
-            ) or paths.matches_glob(path, opts.exclude)
+            excluded = paths.matches_glob(path, opts.exclude)
             if excluded and paths.matches_glob(path, opts.include):
                 excluded = False
             if excluded:
@@ -275,7 +274,9 @@ class Scanner:
             for p in [c.file.path, *c.aliases]
         }
         self._prefetch(candidates, files, skill_dirs)
+        self._plugin_roots = {p.id: p.root for p in comps.plugins}
         skills = [self._record(c, files, comps, skill_dirs) for c in candidates]
+        skills += [_external(p) for p in comps.plugins if p.remote_source is not None]
         return ScanResult(skills, comps.plugins, self.warnings, excluded)
 
     def _prefetch(
@@ -392,6 +393,22 @@ class Scanner:
                 return "unscoped", None
             current = paths.parent(current)
 
+    def _category(
+        self, c: Candidate, skill_dir: str | None, plugin_id: str | None
+    ) -> dict[str, Any]:
+        if skill_dir is not None:
+            container, own_dir = paths.parent(skill_dir), posixpath.basename(skill_dir)
+        else:
+            anchor = c.file.path if c.file is not None else (c.manifest_path or "")
+            container, own_dir = paths.parent(anchor), None
+        result = categories.categorize(
+            container,
+            own_dir=own_dir,
+            plugin_root=self._plugin_roots.get(plugin_id) if plugin_id else None,
+            plugin_id=plugin_id,
+        )
+        return {"category": result.category, "category_reason": result.reason}
+
     def _resources(
         self, skill_dir: str, own_path: str, files: dict[str, LogicalFile], skill_dirs: set[str]
     ) -> tuple[list[Resource], list[str]]:
@@ -449,6 +466,7 @@ class Scanner:
             base["scope"] = ".claude"
         elif c.detector in ("D5", "D7"):
             base["scope"] = ".github"
+        base.update(self._category(c, skill_dir, base["plugin_id"]))
 
         data, broken = self._load_bytes(c)
         if c.file is not None:
@@ -564,6 +582,31 @@ class Scanner:
             return frontmatter.safe_load(text)
         except frontmatter.YamlError as exc:
             return {"error": str(exc)}
+
+
+def _external(plugin: Plugin) -> Skill:
+    """Placeholder for a marketplace plugin whose content lives in another repository."""
+    result = categories.categorize("", external=True)
+    source = plugin.remote_source
+    where = source.get("repo") or source.get("url") if isinstance(source, dict) else source
+    return Skill(
+        id=f"external-plugin:{plugin.id}",
+        kind="skill",
+        type="external-plugin",
+        detector="D8",
+        scope="plugin",
+        source_pointer=plugin.id,
+        plugin_id=plugin.id,
+        category=result.category,
+        category_reason=result.reason,
+        name=plugin.name,
+        name_source="manifest" if plugin.name else None,
+        description=plugin.description,
+        description_source="manifest" if plugin.description else None,
+        extras={"remote_source": source},
+        compliance=Compliance(status="loadable"),
+        warnings=[f"content not scanned: remote source {where!r}"],
+    )
 
 
 def _agent_skill_violations(parsed: frontmatter.Parsed, skill_dir: str) -> list[Violation]:

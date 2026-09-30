@@ -31,7 +31,6 @@ skill-atlas scan <target>
   [--path <subdir>]            # скан только подкаталога
   [--include <glob>]...        # отменяет исключение фикстур и --exclude для совпавших путей
   [--exclude <glob>]...        # дополнительные exclude-паттерны
-  [--include-fixtures]         # не исключать тестовые каталоги
   [--no-tui]                   # без TUI, итог в stdout
   [--output <file>|-]          # дополнительно записать снапшот в файл или stdout
   [--no-save]                  # не писать снапшот в базу
@@ -70,12 +69,14 @@ skill-atlas scan <target>
 skill-atlas                                   # TUI по всей базе
 skill-atlas repos  [--json] [--sort scanned|skills|name]
 skill-atlas skills [--name <substr>] [--repo <repo_key>] [--type <type>]
+                   [--category relevant|auxiliary|all|<category>]
                    [--group-by none|name|hash] [--all-scans] [--json]
 skill-atlas show   <repo_key>[@sha] | <snapshot.json> [--plain] [--with-body]
 ```
 
 - `repos` выводит: `repo_key`, дату последнего скана, `commit_sha` последнего скана, число скиллов, число сканов.
 - `skills` берёт последний снапшот каждого репо. `--all-scans` берёт все снапшоты.
+- `skills --category` по умолчанию `relevant`: тестовые данные, примеры, шаблоны и документация не искажают счётчики (раздел 5.6).
 - `--group-by name` группирует по имени: число репо и число разных `content_sha256`.
 - `--group-by hash` группирует по содержимому: показывает копии одного скилла в разных репо.
 - `show` открывает TUI на сохранённом снапшоте без сети.
@@ -148,11 +149,12 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
 | D5 | `**/.github/prompts/*.prompt.md` | skill | `copilot-prompt` |
 | D6 | `**/.claude/agents/**/*.md`, `<plugin_root>/agents/**/*.md` или пути из `plugin.json#agents` | agent | `claude-agent` |
 | D7 | `**/.github/agents/*.agent.md` | agent | `copilot-agent` |
+| D8 | запись `marketplace.json` с удалённым `source` | skill | `external-plugin` |
 
 Плагины:
 - `plugin_root` — каталог, который содержит `.claude-plugin/plugin.json`. Каталог с `.claude-plugin/marketplace.json` — корень маркетплейса.
 - Тула парсит `plugin.json` и учитывает семантику путей: `skills` добавляется к `skills/`, а `commands` и `agents` заменяют каталоги по умолчанию.
-- Тула парсит `marketplace.json`. Плагины с локальным `source` тула сканирует как `plugin_root`. Плагины с удалённым `source` тула записывает в `plugins[]` с `id = <marketplace_path>#<name>` и не скачивает.
+- Тула парсит `marketplace.json`. Плагины с локальным `source` тула сканирует как `plugin_root`. Плагины с удалённым `source` тула записывает в `plugins[]` с `id = <marketplace_path>#<name>` и не скачивает. Для каждого такого плагина тула добавляет запись D8: заглушку с `name` и `description` из маркетплейса, `extras.remote_source` и warning с адресом источника. Тела и `content_sha256` у заглушки нет.
 - Корень с `plugin.json` — один плагин (`id` = путь корня или `.`); записи маркетплейса с тем же корнем дополняют его. Без `plugin.json` каждая запись маркетплейса — отдельный плагин. Если на один корень ссылается несколько записей, `id = <root>#<name>`.
 - Запись, у которой `source` — корень маркетплейса, и которая задаёт `skills`, загружает только перечисленные каталоги; каталог `skills/` по умолчанию не сканируется. Так устроен `anthropics/skills`.
 - Каждый скилл внутри плагина получает `plugin_id`.
@@ -164,8 +166,8 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
 ### 5.3. Исключения по умолчанию
 
 Каталоги: `.git`, `node_modules`, `vendor`, `.venv`, `venv`, `dist`, `build`, `target`, `__pycache__`.
-Фикстуры (отключаются через `--include-fixtures`): сегменты пути `test/fixtures`, `tests/fixtures`, `testdata`, `__fixtures__`.
-`scan.excluded_candidates` считает кандидатов, исключённых правилом фикстур или `--exclude`. Кандидаты в каталогах по умолчанию не считаются: тула не обходит эти каталоги. `--include` отменяет только правило фикстур и `--exclude`; каталоги по умолчанию исключены всегда.
+Тестовые данные тула не исключает: они попадают в снапшот с категорией `test` (раздел 5.6). Так их можно найти без повторного скана.
+`scan.excluded_candidates` считает кандидатов, исключённых `--exclude`. Кандидаты в каталогах по умолчанию не считаются: тула не обходит эти каталоги. `--include` отменяет только `--exclude`; каталоги по умолчанию исключены всегда.
 
 ### 5.4. Правила разбора
 
@@ -199,6 +201,37 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
 
 Поля-расширения (`when_to_use`, `disable-model-invocation`, `user-invocable`, `context`, `model`, `paths`, `globs`, `icon`, `color`, `argument-hint`) не нарушают спеку. Тула хранит их в `frontmatter` без нормализации.
 
+### 5.6. Категории
+
+`type` описывает формат и загрузчик записи. `category` описывает, зачем запись лежит в репо. Так пользователь сразу отделяет скиллы, которые загружает агент, от тестовых данных и примеров. `category_reason` называет сработавшее правило, например `path segment "jvmTest"`.
+
+Тула проверяет правила по порядку, первое совпадение задаёт категорию:
+
+| Категория | Группа | Правило |
+| - | - | - |
+| `external` | relevant | запись D8 |
+| `test` | auxiliary | сегмент `test`, `tests`, `__tests__`, `testdata`, `test_data`, `fixtures`, `__fixtures__`; префикс `test-`/`test_`; суффикс `-test(s)`/`_test(s)`; Gradle source set `<lower>Test` (`jvmTest`, `commonTest`) |
+| `example` | auxiliary | сегмент `example(s)`, `sample(s)`, `demo(s)`, `showcase`, в том числе с суффиксом через `-`/`_` (`example-plugin`) |
+| `template` | auxiliary | сегмент `template(s)`, `skeleton(s)`, `boilerplate(s)`, `scaffold(s)` |
+| `docs` | auxiliary | сегмент `doc`, `docs`, `documentation` |
+| `plugin` | relevant | компонент плагина |
+| `project` | relevant | корень загрузки в корне репо |
+| `subproject` | relevant | корень загрузки в подкаталоге |
+| `template` | auxiliary | каталог скилла вне корней загрузки называется как шаблон (`template/SKILL.md` в `anthropics/skills`) |
+| `bundled` | relevant | сегмент `resources` или `assets`: скилл поставляется внутри продукта |
+| `catalog` | relevant | остальное, например коллекция `skills/` для установки |
+
+Корни загрузки: пары из `scope` (раздел 5.2), а также `.claude/commands`, `.claude/agents`, `.github/prompts`, `.github/agents`.
+
+Какие сегменты проверяют правила групп auxiliary и `bundled`:
+- внутри корня загрузки — только сегменты до корня: `.claude/skills/tests/unit/` — `project`, `tests/fixtures/x/.claude/skills/` — `test`;
+- для компонента плагина — сегменты `plugin_root`;
+- иначе — сегменты над каталогом скилла; имя самого каталога не проверяется, поэтому скилл `test-runner` не становится тестом.
+
+Слова `testing`, `spec`, `latest`, `contest` не считаются маркерами теста.
+
+TUI и `skills` по умолчанию показывают группу `relevant`. Записи из снапшотов detectors v1 не имеют категории и считаются `relevant`: v1 не сохранял фикстуры.
+
 ## 6. Модель данных снапшота
 
 Формат: JSON, UTF-8, ключи отсортированы, отступ 2. Массивы тула сортирует детерминированно: `skills` по `id`, `resources` по `path`.
@@ -211,10 +244,10 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
     "id": "01J8Z6K3M2...",
     "scanned_at": "2026-09-30T14:12:03.512Z",
     "tool_version": "0.1.0",
-    "detectors_version": 1,
+    "detectors_version": 2,
     "fetch_method": "api",
     "duration_ms": 2140,
-    "options": { "ref": null, "path": null, "include": [], "exclude": [], "include_fixtures": false },
+    "options": { "ref": null, "path": null, "include": [], "exclude": [] },
     "excluded_candidates": 3,
     "warnings": []
   },
@@ -269,6 +302,8 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
       "dir": "skills/pdf",
       "source_pointer": null,
       "plugin_id": null,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "name": "pdf",
       "name_source": "frontmatter",
       "description": "Extract text and tables from PDF files...",
@@ -292,8 +327,10 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
   "stats": {
     "skills": 1,
     "agents": 0,
+    "external": 0,
     "by_type": { "agent-skill": 1 },
-    "by_compliance": { "compliant": 1 }
+    "by_compliance": { "compliant": 1 },
+    "by_category": { "catalog": 1 }
   }
 }
 ```
@@ -306,6 +343,8 @@ Rate limit: при 403/429 с `X-RateLimit-Remaining: 0` тула заверша
 - `content_sha256` считается от исходных байтов файла (или inline `content` для D4), до санитизации.
 - `body` хранит оригинал. Санитизация — только при рендере (раздел 9).
 - Содержимое ресурсов в снапшот не входит.
+- `stats.skills` и `stats.agents` не считают заглушки D8; их считает `stats.external`.
+- Snapshots v1 с `scan.options.include_fixtures` тула читает: загрузчик удаляет это поле. Смена `detectors_version` на 2 отменяет cache hit по старым снапшотам.
 
 ### 6.1. Версионирование схемы
 
@@ -366,12 +405,13 @@ Cache hit — в базе уже есть снапшот с тем же `repo_ke
 - Левая панель: репозитории базы, последний скан сверху. Колонки: `repo`, `skills`, `agents`, `scans`, `last scan`, `commit`.
 - Правая панель: описание репо, счётчики, параметры последнего скана (как вкладка Scan) и история сканов.
 - `Enter` открывает последний снапшот репо на экране снапшота. `Esc` на экране снапшота возвращает к списку.
+- `n` открывает поле ввода цели: GitHub URL, `owner/repo` или локальный путь. `Enter` запускает скан с опциями по умолчанию в фоновом потоке. TUI остаётся отзывчивым, строка статуса показывает этапы скана. После скана тула перечитывает базу и открывает снапшот. Ошибка скана приходит уведомлением; список остаётся на месте. Одновременно идёт только один скан.
 
 Экран снапшота (`scan`, `show`):
 - Шапка: `repo_key@sha8`, дата коммита, `dirty`, число скиллов и агентов.
-- Левая панель: список записей. Колонки: `name`, `copies`, `type`, `compliance`, `path`.
+- Левая панель: список записей. Колонки: `name`, `copies`, `category`, `type`, `compliance`, `path`. Записи группы auxiliary выводятся приглушённо.
 - Правая панель, вкладки: Overview (ключевые поля и метаданные репо), Frontmatter (YAML как есть), Body (отрендеренный markdown), Resources (список файлов), Warnings, Scan (когда и как тула сделала снапшот: время, длительность, `fetch_method`, версия тулы, ref, коммит, опции скана, файл снапшота).
-- Строка статуса: активные фильтры и путь к снапшоту.
+- Строка статуса: активные фильтры, число записей, скрытых фильтром категорий, и путь к снапшоту.
 
 Группировка копий. Тула уже сворачивает symlink-копии в `aliases` (раздел 5). Реальные копии одного скилла (например, в `.claude/skills` и `.agents/skills`) остаются отдельными записями снапшота. TUI группирует записи с одинаковыми `kind`, `name` и `content_sha256` в одну строку. Колонка `copies` показывает `+N`, Overview перечисляет пути копий. Группировка работает только при отображении: снапшот, `--plain` и агрегация видят все записи. Сравнение идёт только по основному файлу: копии с разными ресурсами попадают в одну строку.
 
@@ -381,11 +421,13 @@ Cache hit — в базе уже есть снапшот с тем же `repo_ke
 | - | - |
 | `↑/↓`, `j/k` | навигация |
 | `/` | поиск по `name`, `description`, `path` |
+| `g` | переключить группу категорий: relevant → auxiliary → все (по умолчанию relevant) |
 | `f` | переключить фильтр `kind`: skill → agent → все (по умолчанию skill) |
 | `t` | переключить фильтр `type` |
 | `c` | переключить фильтр `compliance` |
 | `d` | группировать копии / показать каждую запись (по умолчанию группировать) |
 | `Enter` | экран репозиториев: открыть последний снапшот |
+| `n` | экран репозиториев: просканировать новый репо |
 | `Esc` | закрыть поиск; на экране снапшота из списка репо — назад |
 | `tab` | переключение панели |
 | `1`–`6` | вкладки |
@@ -497,7 +539,7 @@ GitLab и Bitbucket; скан организации или списка реп�
 
 ## 15. Статус реализации
 
-Этапы M0–M6 реализованы. Проверки: `ruff check`, `ruff format --check`, `mypy --strict`, 109 тестов `pytest` на Python 3.12 и 3.14.
+Этапы M0–M6 реализованы. Проверки: `ruff check`, `ruff format --check`, `mypy --strict`, 141 тест `pytest` на Python 3.12 и 3.14.
 
 Покрытие тестами:
 - детекторы D1–D7, плагины, маркетплейсы, symlink, compliance, исключения, битые файлы — golden-снапшоты по 13 фикстурам;
@@ -505,11 +547,14 @@ GitLab и Bitbucket; скан организации или списка реп�
 - GitHub: ref со `/` в URL, 401, 404, rate limit, ретраи 5xx, fallback на clone, ошибка чтения одного файла, токен не попадает в снапшот;
 - база: имена файлов, запись без перезаписи, cache hit, `dirty`, неизвестная версия схемы;
 - агрегация: последний снапшот репо, группировка, связь по `node_id`, 1000 снапшотов быстрее 2 с;
-- TUI: экран репозиториев, переход в снапшот и назад, пустая база, группировка копий;
+- TUI: экран репозиториев, переход в снапшот и назад, пустая база, группировка копий, скан из TUI (успех и ошибка), фильтр категорий;
+- категории: правила по путям, включая ложные совпадения (`testing`, `latest`, `spec`, имя каталога скилла), старые снапшоты без категорий, cache miss при смене `detectors_version`;
 - санитизация: unit-тесты и fuzz (`hypothesis`); TUI и `--plain` на контенте с ANSI, OSC 8 и bidi.
 
 Ручная проверка: скан `JetBrains/kotlin` (111 487 файлов, Trees API обрезает листинг) за ~26 с, 6 скиллов. Скан `anthropics/skills` за ~3 с, 20 скиллов, 5 плагинов маркетплейса. Тула нашла реальные нарушения спеки: `description` длиннее 1024 символов у `claude-api` и `name`, не совпадающий с каталогом, у `template`.
 
 Скан `JetBrains/MPS`: 114 записей, после группировки копий 41 строка (41 скилл лежит в `.agents/skills` и `.claude/skills`, 32 из них ещё и в `plugins/mcp-tools/resources/.../skills`).
+
+Категории на реальных репо: `JetBrains/koog` — 2 project, 2 test (`integration-tests/src/jvmTest/resources`); `JetBrains/MPS` — 82 project, 32 bundled; `anthropics/skills` — 19 plugin, 1 template; `anthropics/claude-plugins-official` — 94 plugin, 3 example (`example-plugin`), 262 external.
 
 Не реализовано в v1: GitHub Enterprise не проверен на живом инстансе; Windows не проверен.

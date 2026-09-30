@@ -2,13 +2,12 @@
   "plugins": [],
   "repo": null,
   "scan": {
-    "detectors_version": 1,
-    "excluded_candidates": 1,
+    "detectors_version": 2,
+    "excluded_candidates": 0,
     "fetch_method": "fs",
     "options": {
       "exclude": [],
       "include": [],
-      "include_fixtures": false,
       "path": null,
       "ref": null
     },
@@ -22,6 +21,8 @@
       "body": "# real\n\nSteps.\n",
       "body_bytes": 15,
       "body_lines": 4,
+      "category": "catalog",
+      "category_reason": "outside agent load roots and plugins",
       "compliance": {
         "status": "compliant",
         "violations": []
@@ -50,6 +51,42 @@
       "source_pointer": null,
       "type": "agent-skill",
       "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# fake\n\nSteps.\n",
+      "body_bytes": 15,
+      "body_lines": 4,
+      "category": "test",
+      "category_reason": "path segment \"tests\"",
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "4160687d0d0803b1d6710775144bfcbca2bcd59747327b835b0fdbe095581e8d",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "tests/fixtures/skills/fake",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "fake"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: fake\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "e5f618868e9040cb3cbfd07398670f0a406a4f26",
+      "id": "agent-skill:tests/fixtures/skills/fake/SKILL.md",
+      "kind": "skill",
+      "name": "fake",
+      "name_source": "frontmatter",
+      "path": "tests/fixtures/skills/fake/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
     }
   ],
   "source": {
@@ -68,12 +105,17 @@
   },
   "stats": {
     "agents": 0,
+    "by_category": {
+      "catalog": 1,
+      "test": 1
+    },
     "by_compliance": {
-      "compliant": 1
+      "compliant": 2
     },
     "by_type": {
-      "agent-skill": 1
+      "agent-skill": 2
     },
-    "skills": 1
+    "external": 0,
+    "skills": 2
   }
 }

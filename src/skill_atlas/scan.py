@@ -47,7 +47,6 @@ class ScanRequest:
     path: str | None = None
     include: list[str] = field(default_factory=list)
     exclude: list[str] = field(default_factory=list)
-    include_fixtures: bool = False
     host: str = "github.com"
     force: bool = False
 
@@ -117,7 +116,6 @@ def prepare_local(req: ScanRequest, target: LocalTarget) -> _Prepared:
             path=user_path,
             include=req.include,
             exclude=req.exclude,
-            include_fixtures=req.include_fixtures,
         )
         return _Prepared(source, None, options, "fs", lambda: _static(FsTreeSource(path)))
 
@@ -141,7 +139,6 @@ def prepare_local(req: ScanRequest, target: LocalTarget) -> _Prepared:
         path=scan_path,
         include=req.include,
         exclude=req.exclude,
-        include_fixtures=req.include_fixtures,
     )
     common: dict[str, Any] = {
         "kind": "local",
@@ -255,7 +252,6 @@ def prepare_github(
         path=scan_path,
         include=req.include,
         exclude=req.exclude,
-        include_fixtures=req.include_fixtures,
     )
     prepared = _Prepared(source, meta, options, "api", lambda: None)
 
