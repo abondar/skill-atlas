@@ -112,6 +112,22 @@ def test_terminal_escapes_are_sanitized_in_summary(tmp_path: Path) -> None:
     assert "evil" in proc.stdout
 
 
+def test_web_flag_only_without_command() -> None:
+    proc = run("--web", "repos")
+    assert proc.returncode == 2 and "--web works only without a command" in proc.stderr
+
+
+def test_web_port_in_use_is_a_clean_error() -> None:
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen()
+        port = sock.getsockname()[1]
+        proc = run("--web", "--no-browser", "--web-port", str(port))
+    assert proc.returncode == 1 and "cannot listen on" in proc.stderr
+
+
 def test_version() -> None:
     proc = run("--version")
     assert proc.returncode == 0 and proc.stdout.startswith("skill-atlas ")

@@ -50,8 +50,31 @@ def _root(
     version: Annotated[
         bool, typer.Option("--version", callback=_version, is_eager=True, help="Show version.")
     ] = False,
+    web: Annotated[bool, typer.Option("--web", help="Open the web UI instead of the TUI.")] = False,
+    host: Annotated[
+        str, typer.Option("--web-host", help="With --web: address to listen on.")
+    ] = "127.0.0.1",
+    port: Annotated[
+        int, typer.Option("--web-port", help="With --web: port; 0 picks a free one.")
+    ] = 0,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="With --web: do not open a browser.")
+    ] = False,
 ) -> None:
     if ctx.invoked_subcommand is not None:
+        if web:
+            raise UsageError("--web works only without a command")
+        return
+    if web:
+        from skill_atlas.web import serve
+
+        serve(
+            store.scans_dir(),
+            host=host,
+            port=port,
+            open_browser=not no_browser,
+            announce=lambda line: err.print(Text(line)),
+        )
         return
     if not _interactive():
         typer.echo(ctx.get_help())

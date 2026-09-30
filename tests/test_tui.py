@@ -14,11 +14,10 @@ from skill_atlas.tui import (
     ReposScreen,
     SnapshotScreen,
     body_view,
-    dedupe,
     overview,
-    permalink,
     scan_view,
 )
+from skill_atlas.views import dedupe, permalink
 from tests.conftest import make_tree, scan_path
 
 EVIL = "\x1b]8;;https://evil.example\x1b\\click\x1b]8;;\x1b\\ \x1b[2J‮"

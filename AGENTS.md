@@ -35,5 +35,9 @@ outside the change (for example, a runner outage), say so and give the run URL.
 
 - Terminal output: sanitize every string from a repository (`skill_atlas.sanitize`). Pass
   `rich.text.Text` to Textual widgets, never markup strings.
+- Web UI (`skill_atlas/web`): the server sanitizes snapshot strings; `app.js` inserts them
+  with `textContent` only. `body_html` is the single `innerHTML`, rendered with raw HTML off.
+  Keep the CSP strict: no inline scripts or styles.
+- Keep the TUI and the web UI at feature parity; shared view logic lives in `views.py`.
 - Snapshots are immutable. Never rewrite a file in the store.
 - Tests must not use the network. GitHub tests use `respx` fakes (`tests/test_github.py`).

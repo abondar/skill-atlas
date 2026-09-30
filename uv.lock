@@ -723,6 +723,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "markdown-it-py" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -743,6 +744,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "markdown-it-py", specifier = ">=3.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.7" },

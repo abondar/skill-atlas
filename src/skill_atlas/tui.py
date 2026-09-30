@@ -11,7 +11,6 @@ import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
-from urllib.parse import quote
 
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
@@ -27,6 +26,7 @@ from skill_atlas import aggregate, categories, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
+from skill_atlas.views import dedupe, permalink
 
 TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan")
 COMPLIANCE_FILTERS: tuple[str | None, ...] = (None, "compliant", "loadable", "broken")
@@ -48,23 +48,6 @@ def header_text(snap: Snapshot) -> Text:
         parts.append("DIRTY")
     parts.append(f"{snap.stats.skills} skills, {snap.stats.agents} agents")
     return Text("  ·  ".join(parts), style="bold")
-
-
-def dedupe(skills: list[Skill]) -> list[tuple[Skill, list[Skill]]]:
-    """Group identical copies (same kind, name and content) under the first occurrence.
-
-    Symlinked copies are already folded into `Skill.aliases` by the scanner; this
-    catches real copies, such as one skill committed to `.claude/skills` and
-    `.agents/skills`. Display only: the snapshot keeps every entry.
-    """
-    groups: dict[tuple[str | None, ...], tuple[Skill, list[Skill]]] = {}
-    for s in skills:
-        key = (s.kind, s.name, s.content_sha256) if s.content_sha256 else ("id", s.id)
-        if key in groups:
-            groups[key][1].append(s)
-        else:
-            groups[key] = (s, [])
-    return list(groups.values())
 
 
 def overview(
@@ -159,16 +142,6 @@ def warnings_view(snap: Snapshot, skill: Skill | None) -> RenderableType:
         for w in snap.scan.warnings:
             lines.append(f"• {sanitize_line(w)}\n")
     return lines if lines.plain else Text("No warnings.", style="dim")
-
-
-def permalink(snap: Snapshot, skill: Skill) -> str | None:
-    src = snap.source
-    if src.kind != "github" or not skill.path or not src.commit_sha:
-        return None
-    return (
-        f"https://{quote(src.host or 'github.com')}/{quote(src.owner or '')}/"
-        f"{quote(src.name or '')}/blob/{src.commit_sha}/{quote(skill.path)}"
-    )
 
 
 def scan_view(snap: Snapshot, path: Path | None) -> RenderableType:

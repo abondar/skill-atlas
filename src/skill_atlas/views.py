@@ -1,0 +1,39 @@
+"""View logic shared by the TUI and the web UI."""
+
+from __future__ import annotations
+
+from urllib.parse import quote
+
+from skill_atlas.model import Skill, Snapshot
+
+
+def dup_key(s: Skill) -> tuple[str | None, ...]:
+    """Identical copies share this key: same kind, name and content."""
+    return (s.kind, s.name, s.content_sha256) if s.content_sha256 else ("id", s.id)
+
+
+def dedupe(skills: list[Skill]) -> list[tuple[Skill, list[Skill]]]:
+    """Group identical copies (same kind, name and content) under the first occurrence.
+
+    Symlinked copies are already folded into `Skill.aliases` by the scanner; this
+    catches real copies, such as one skill committed to `.claude/skills` and
+    `.agents/skills`. Display only: the snapshot keeps every entry.
+    """
+    groups: dict[tuple[str | None, ...], tuple[Skill, list[Skill]]] = {}
+    for s in skills:
+        key = dup_key(s)
+        if key in groups:
+            groups[key][1].append(s)
+        else:
+            groups[key] = (s, [])
+    return list(groups.values())
+
+
+def permalink(snap: Snapshot, skill: Skill) -> str | None:
+    src = snap.source
+    if src.kind != "github" or not skill.path or not src.commit_sha:
+        return None
+    return (
+        f"https://{quote(src.host or 'github.com')}/{quote(src.owner or '')}/"
+        f"{quote(src.name or '')}/blob/{src.commit_sha}/{quote(skill.path)}"
+    )

@@ -52,6 +52,14 @@ Each entry also gets a `category` that says why it is in the repository:
 `category_reason` names the rule that matched. Test data is kept in the snapshot, not
 dropped, so `g` in the TUI or `skills --category test` shows it without a new scan.
 
+## Web UI
+
+`skill-atlas --web` serves the TUI features on `127.0.0.1` and opens the browser: repositories,
+scan history, snapshots, filters, grouped copies, tabs, permalinks, JSON export and scanning a
+new repository. Keys match the TUI. `--web-port N` fixes the port, `--no-browser` only prints
+the URL. The URL carries a one-time token that the page exchanges for a `SameSite=Strict`
+cookie; the server also checks the `Host` header and sends a strict CSP.
+
 ## Store and aggregation
 
 Snapshots live in `$SKILL_ATLAS_HOME/scans/` (default `~/.local/share/skill-atlas/scans/`),
@@ -59,6 +67,7 @@ one flat, time-sortable file per scan.
 
 ```bash
 skill-atlas                                        # TUI: repositories -> snapshot -> skills; n scans a new repo
+skill-atlas --web                                  # the same in the browser (localhost, token in the URL)
 skill-atlas repos                                  # known repositories, latest scan each
 skill-atlas skills --category test                 # relevant (default), auxiliary, all, or one category
 skill-atlas skills --group-by name                 # same skill name across repositories
