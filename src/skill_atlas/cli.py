@@ -97,7 +97,7 @@ def _interactive() -> bool:
 def _run_tui(snapshot: Snapshot, path: Path | None) -> None:
     from skill_atlas.tui import AtlasApp
 
-    AtlasApp(snapshot, path).run()
+    AtlasApp(snapshot, path, store.scans_dir()).run()
 
 
 def print_summary(console: Console, snapshot: Snapshot, path: Path | None, cache_hit: bool) -> None:

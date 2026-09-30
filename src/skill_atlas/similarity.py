@@ -116,57 +116,52 @@ class Match:
 Key = tuple[str | None, ...]
 
 
-class Index:
-    """Vectors and shingles for every skill with content in one snapshot.
+class Corpus:
+    """TF-IDF vectors and body shingles for distinct contents, keyed by `views.dup_key`.
 
-    Building costs about 0.4 s for 300 skills; a query is one pass over the vectors.
+    IDF comes from the corpus itself: one snapshot for `Index`, the latest snapshot of
+    every repository for `crossrepo.CrossIndex`.
     """
 
-    def __init__(self, snap: Snapshot) -> None:
-        self.groups: dict[Key, list[Skill]] = {}
-        for s in snap.skills:
-            if s.category == "external":
-                continue  # placeholders: no content
-            self.groups.setdefault(dup_key(s), []).append(s)
+    def __init__(self, groups: dict[Key, list[Skill]]) -> None:
+        self.groups = groups
         counts: dict[Key, dict[str, float]] = {}
-        df: dict[str, int] = {}
+        self.df: dict[str, int] = {}
         # The most frequent word for each stem, to show "enabled" rather than "enabl".
         surface: dict[str, dict[str, int]] = {}
         self.shingles: dict[Key, frozenset[int]] = {}
-        for key, (s, *_) in self.groups.items():
-            tf: dict[str, float] = {}
-            fields = (("name", s.name), ("description", s.description), ("body", s.body))
-            for field_name, text in fields:
-                weight = FIELD_WEIGHTS[field_name]
-                for stem, word in terms(text or ""):
-                    tf[stem] = tf.get(stem, 0.0) + weight
-                    forms = surface.setdefault(stem, {})
-                    forms[word] = forms.get(word, 0) + 1
+        for key, (s, *_) in groups.items():
+            tf = term_counts(s, surface)
             counts[key] = tf
             for stem in tf:
-                df[stem] = df.get(stem, 0) + 1
+                self.df[stem] = self.df.get(stem, 0) + 1
             # The body only: a differing description should not hide a copied body.
             self.shingles[key] = _shingles(s.body or "")
         self.surface = {
             stem: min(forms.items(), key=lambda kv: (-kv[1], kv[0]))[0]
             for stem, forms in surface.items()
         }
-        n = len(self.groups)
-        self.vectors: dict[Key, dict[str, float]] = {}
-        for key, tf in counts.items():
-            weights = {
-                t: (1 + math.log(c)) * (math.log((1 + n) / (1 + df[t])) + 1) for t, c in tf.items()
-            }
-            top = sorted(weights.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_TERMS]
-            norm = math.sqrt(sum(w * w for _, w in top)) or 1.0
-            self.vectors[key] = {t: w / norm for t, w in top}
+        self.vectors = {key: self.vector(tf) for key, tf in counts.items()}
 
-    def _compare(self, key: Key, other: Key) -> Match:
-        vec, ovec = self.vectors[key], self.vectors[other]
+    def vector(self, tf: dict[str, float]) -> dict[str, float]:
+        n = len(self.groups)
+        weights = {
+            t: (1 + math.log(c)) * (math.log((1 + n) / (1 + self.df.get(t, 0))) + 1)
+            for t, c in tf.items()
+        }
+        top = sorted(weights.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_TERMS]
+        norm = math.sqrt(sum(w * w for _, w in top)) or 1.0
+        return {t: w / norm for t, w in top}
+
+    def compare_with(
+        self, vec: dict[str, float], sh: frozenset[int], other: Key, skill: Skill | None = None
+    ) -> Match:
+        """Compare a (vector, shingles) pair with the corpus entry `other`."""
+        ovec = self.vectors[other]
         small, large = (vec, ovec) if len(vec) <= len(ovec) else (ovec, vec)
         contrib = {t: w * large[t] for t, w in small.items() if t in large}
         topic = min(1.0, sum(contrib.values()))
-        sh, osh = self.shingles[key], self.shingles[other]
+        osh = self.shingles[other]
         common = len(sh & osh)
         here = common / len(sh) if sh else 0.0
         there = common / len(osh) if osh else 0.0
@@ -174,7 +169,44 @@ class Index:
         ranked = sorted(contrib.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
         shared = tuple(self.surface.get(t, t) for t, _ in ranked)
         group = self.groups[other]
-        return Match(group[0], max(topic, overlap), topic, here, there, shared, len(group) - 1)
+        return Match(
+            skill or group[0], max(topic, overlap), topic, here, there, shared, len(group) - 1
+        )
+
+    def compare(self, key: Key, other: Key) -> Match:
+        return self.compare_with(self.vectors[key], self.shingles[key], other)
+
+
+def term_counts(s: Skill, surface: dict[str, dict[str, int]] | None = None) -> dict[str, float]:
+    tf: dict[str, float] = {}
+    fields = (("name", s.name), ("description", s.description), ("body", s.body))
+    for field_name, text in fields:
+        weight = FIELD_WEIGHTS[field_name]
+        for stem, word in terms(text or ""):
+            tf[stem] = tf.get(stem, 0.0) + weight
+            if surface is not None:
+                forms = surface.setdefault(stem, {})
+                forms[word] = forms.get(word, 0) + 1
+    return tf
+
+
+def shingles_of(s: Skill) -> frozenset[int]:
+    return _shingles(s.body or "")
+
+
+class Index(Corpus):
+    """Similar skills inside one snapshot.
+
+    Building costs about 0.4 s for 300 skills; a query is one pass over the vectors.
+    """
+
+    def __init__(self, snap: Snapshot) -> None:
+        groups: dict[Key, list[Skill]] = {}
+        for s in snap.skills:
+            if s.category == "external":
+                continue  # placeholders: no content
+            groups.setdefault(dup_key(s), []).append(s)
+        super().__init__(groups)
 
     def _others(self, skill: Skill) -> list[tuple[Key, Key]]:
         key = dup_key(skill)
@@ -191,7 +223,7 @@ class Index:
             m
             for key, other in self._others(skill)
             if not same_skill(self.groups[other][0], skill)
-            and (m := self._compare(key, other)).score >= threshold
+            and (m := self.compare(key, other)).score >= threshold
         ]
         out.sort(key=lambda m: (-m.score, m.skill.name or "", m.skill.id))
         return out
@@ -199,7 +231,7 @@ class Index:
     def versions(self, skill: Skill) -> list[Match]:
         """Other versions of the same skill (same kind and name, different content)."""
         out = [
-            self._compare(key, other)
+            self.compare(key, other)
             for key, other in self._others(skill)
             if same_skill(self.groups[other][0], skill)
         ]

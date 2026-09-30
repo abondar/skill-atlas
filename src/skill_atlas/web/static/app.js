@@ -210,6 +210,7 @@ async function loadSnapshot(file) {
 function invalidate() {
   cache.repos = null;
   cache.skills.clear();
+  crossCache.clear(); // a new snapshot changes the matches in other repositories
 }
 
 // --- toasts -------------------------------------------------------------------------
@@ -853,6 +854,7 @@ function openSkill(id, updateUrl = true) {
   const tabsEl = h("div", { class: "tabs", role: "tablist" });
   const body = h("div", { class: "drawer-body" });
   const sim = { data: null, error: null };
+  const cross = { data: null, error: null };
   let current = "overview";
   function defs() {
     const n = sim.data ? sim.data.similar.length : null;
@@ -861,6 +863,7 @@ function openSkill(id, updateUrl = true) {
       ["content", "Content", null],
       ["files", "Files", s.resources.length || null],
       ["similar", "Similar", n],
+      ["repos", "Other repos", cross.data ? cross.data.matches.length : null],
     ];
   }
   function drawTabs() {
@@ -874,7 +877,7 @@ function openSkill(id, updateUrl = true) {
     current = t;
     setParams({ dtab: t === "overview" ? null : t });
     drawTabs();
-    const views = { content: () => contentTab(s), files: () => filesTab(s), similar: () => similarTab(s, sim), overview: () => overviewTab(s, copies, versions, sim) };
+    const views = { content: () => contentTab(s), files: () => filesTab(s), similar: () => similarTab(s, sim), repos: () => reposTab(s, cross), overview: () => overviewTab(s, copies, versions, sim) };
     body.replaceChildren(...views[t]().filter(Boolean));
     body.scrollTop = 0;
   }
@@ -902,8 +905,16 @@ function openSkill(id, updateUrl = true) {
   document.body.append(scrim, panel);
   drawer = { scrim, panel };
   const dtab = route().params.get("dtab");
-  show(["content", "files", "similar"].includes(dtab) ? dtab : "overview");
+  show(["content", "files", "similar", "repos"].includes(dtab) ? dtab : "overview");
   panel.querySelector(".btn.ghost").focus();
+  loadCross(page.file, s.id).then(
+    (data) => (cross.data = data),
+    (err) => (cross.error = err.message),
+  ).then(() => {
+    if (drawer?.panel !== panel) return;
+    if (current === "repos") show("repos");
+    else drawTabs();
+  });
   loadSimilar(page.file, s.id).then(
     (data) => (sim.data = data),
     (err) => (sim.error = err.message),
@@ -924,6 +935,81 @@ function loadSimilar(file, id) {
     request.catch(() => similarCache.delete(key));
   }
   return similarCache.get(key);
+}
+
+const crossCache = new Map();
+
+function loadCross(file, id) {
+  const key = `${file}\n${id}`;
+  if (!crossCache.has(key)) {
+    const request = api(`/api/crossrepo?file=${encodeURIComponent(file)}&id=${encodeURIComponent(id)}`);
+    crossCache.set(key, request);
+    request.catch(() => crossCache.delete(key));
+  }
+  return crossCache.get(key);
+}
+
+const STATUS_LABEL = { identical: "Identical", fork: "Copied text", related: "Same topic" };
+const STATUS_HINT = {
+  identical: "The same file content.",
+  fork: "A copy that was edited: large parts of the text are the same.",
+  related: "Little shared text, but the same vocabulary: likely a rewrite.",
+};
+
+function reposTab(s, cross) {
+  if (cross.error) return [h("div", { class: "callout bad" }, icon("alert"), h("div", {}, `Could not compare: ${cross.error}`))];
+  if (!cross.data) return [h("div", { class: "loading" }, h("span", { class: "spinner" }), "Comparing with other repositories…")];
+  const { threshold, repos, matches } = cross.data;
+  const intro = h(
+    "p",
+    { class: "muted" },
+    `This skill in the latest snapshots of ${plural(repos, "other repository", "other repositories")}, matched by content at ${pct(threshold)} or more. Names are not compared: the same name can be a different skill.`,
+  );
+  if (!matches.length) return [intro, emptyState("layers", "Not found in other repositories", repos ? `No skill in the other repositories reaches ${pct(threshold)}.` : "Scan more repositories to compare.")];
+  return [
+    intro,
+    h(
+      "ul",
+      { class: "similar" },
+      matches.map((m) => {
+        const { owner, name } = repoName(repoById(m.repo_id)?.source, m.repo_key);
+        return h(
+          "li",
+          {},
+          h(
+            "a",
+            { class: "similar-item", href: href("repo", m.repo_id, { skill: m.id, cat: "all" }) },
+            h(
+              "div",
+              { class: "similar-head" },
+              h("span", { class: `score ${m.status === "related" ? m.level : "near-identical"}`, title: STATUS_HINT[m.status] }, pct(m.score)),
+              h("div", { class: "grow" }, h("div", { class: "card-title" }, h("span", { class: "owner" }, `${owner}/${name} · `), m.name || "(unnamed)"), h("div", { class: "card-path" }, m.path)),
+              h("span", { class: `badge status-${m.status}`, title: STATUS_HINT[m.status] }, STATUS_LABEL[m.status]),
+            ),
+            m.description ? h("div", { class: "card-desc" }, m.description) : null,
+            m.status === "identical"
+              ? null
+              : h(
+                  "dl",
+                  { class: "props compact" },
+                  h("dt", {}, "Vocabulary"),
+                  h("dd", {}, meter(m.topic), pct(m.topic)),
+                  h("dt", {}, "Shared text"),
+                  h("dd", {}, `${pct(m.overlap_here)} of this skill is in that one · ${pct(m.overlap_there)} of that one is in this skill`),
+                ),
+            h(
+              "div",
+              { class: "badges" },
+              categoryBadge(m.category),
+              h("span", { class: "badge outline" }, TYPE_LABEL[m.type] || m.type),
+              m.name !== s.name ? h("span", { class: "badge warn", title: "Same content under another name" }, "Other name") : null,
+              m.copies ? h("span", { class: "badge accent" }, icon("layers"), `${m.copies + 1} locations`) : null,
+            ),
+          ),
+        );
+      }),
+    ),
+  ];
 }
 
 // Rounded down, so a 99.6% match never reads as 100%.
@@ -1135,20 +1221,20 @@ async function renderSkills(params, token) {
     const q = (route().params.get("q") || "").toLowerCase();
     const groups = new Map();
     for (const s of skills) {
-      if (q && !`${s.name || ""} ${s.description} ${s.repo_key}`.toLowerCase().includes(q)) continue;
-      const key = (s.name || "(unnamed)").toLowerCase();
-      if (!groups.has(key)) groups.set(key, { name: s.name || "(unnamed)", items: [] });
-      groups.get(key).items.push(s);
+      if (!groups.has(s.family)) groups.set(s.family, { name: s.family_name, items: [] });
+      groups.get(s.family).items.push(s);
     }
-    const sorted = [...groups.values()].sort((a, b) => new Set(b.items.map((i) => i.repo_id)).size - new Set(a.items.map((i) => i.repo_id)).size || a.name.localeCompare(b.name));
+    // A family matches when any member does: a renamed copy stays with its original.
+    const hit = (s) => `${s.name || ""} ${s.description} ${s.repo_key}`.toLowerCase().includes(q);
+    const sorted = [...groups.values()].filter((g) => !q || g.items.some(hit)).sort((a, b) => new Set(b.items.map((i) => i.repo_id)).size - new Set(a.items.map((i) => i.repo_id)).size || a.name.localeCompare(b.name));
     const shown = sorted.slice(0, 300);
-    line.textContent = `${plural(sorted.length, "skill name")} across ${plural(data.repos.length, "repository", "repositories")}${sorted.length > shown.length ? ` · showing the first ${shown.length}` : ""}`;
+    line.textContent = `${plural(sorted.length, "skill")} across ${plural(data.repos.length, "repository", "repositories")}${sorted.length > shown.length ? ` · showing the first ${shown.length}` : ""}`;
     list.replaceChildren(...shown.map(groupCard));
     if (!shown.length) list.replaceChildren(emptyState("search", "No skills found", q ? "Try another search." : "Scan a repository first."));
   }
 
   setMain(
-    h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Skills"), h("div", { class: "sub" }, "Every skill from the latest snapshot of each repository, grouped by name."))),
+    h("div", { class: "page-head" }, h("div", {}, h("h1", {}, "Skills"), h("div", { class: "sub" }, "Every skill from the latest snapshot of each repository. Copies and edited versions of one skill are grouped by content, not by name."))),
     h("div", { class: "toolbar" }, h("label", { class: "field big" }, icon("search"), search, h("kbd", {}, "/")), segmented),
     line,
     list,
@@ -1160,7 +1246,8 @@ function groupCard(g) {
   const repos = new Map();
   for (const s of g.items) if (!repos.has(s.repo_id)) repos.set(s.repo_id, s);
   const variants = new Set(g.items.map((s) => s.content_sha256 || s.id)).size;
-  const first = g.items[0];
+  const otherNames = [...new Set(g.items.map((s) => s.name).filter((n) => n && n !== g.name))].sort();
+  const first = g.items.find((s) => s.name === g.name) || g.items[0];
   return h(
     "div",
     { class: "card group" },
@@ -1170,7 +1257,8 @@ function groupCard(g) {
       h("span", { class: "name" }, g.name),
       h("span", { class: "badge outline" }, TYPE_LABEL[first.type] || first.type),
       h("span", { class: "badge accent" }, plural(repos.size, "repository", "repositories")),
-      variants > 1 ? h("span", { class: "badge warn", title: "Different file contents under the same name" }, `${variants} variants`) : null,
+      variants > 1 ? h("span", { class: "badge warn", title: "Different file contents of one skill" }, `${variants} versions`) : null,
+      otherNames.length ? h("span", { class: "badge outline", title: "Other names of this skill" }, `also ${otherNames.join(", ")}`) : null,
     ),
     h("div", { class: "card-desc three" }, first.description || "No description."),
     h(

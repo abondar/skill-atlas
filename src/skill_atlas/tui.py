@@ -22,13 +22,14 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static, TabbedContent, TabPane
 
-from skill_atlas import aggregate, categories, similarity, store
+from skill_atlas import aggregate, categories, crossrepo, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
 from skill_atlas.views import dedupe, permalink, versions
 
-TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan", "similar")
+TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan", "similar", "repos")
+TAB_TITLES = {"repos": "Other repos"}
 COMPLIANCE_FILTERS: tuple[str | None, ...] = (None, "compliant", "loadable", "broken")
 KIND_FILTERS: tuple[str | None, ...] = ("skill", "agent", None)
 CATEGORY_FILTERS = ("relevant", "auxiliary", "all")
@@ -235,6 +236,54 @@ def similar_view(index: similarity.Index, skill: Skill | None) -> RenderableType
     return Group(*parts)
 
 
+STATUS_TEXT = {"identical": "identical", "fork": "copied text", "related": "same topic"}
+
+
+def crossrepo_view(
+    index: crossrepo.CrossIndex | None, skill: Skill | None, exclude: set[str]
+) -> RenderableType:
+    """The skill in the latest snapshots of other repositories."""
+    if skill is None:
+        return Text("")
+    if index is None:
+        return Text("This snapshot is not in a store: nothing to compare with.", style="dim")
+    threshold = similarity.percent(similarity.THRESHOLD)
+    others = sum(1 for r in index.repos if r.ident not in exclude)
+    parts: list[RenderableType] = [
+        Text(
+            f"This skill in the latest snapshots of {others} other repositories, matched by "
+            f"content at {threshold} or more. Names are not compared.",
+            style="dim",
+        ),
+        Text(""),
+    ]
+    matches = index.matches(skill, exclude)
+    if not matches:
+        parts.append(Text(f"No skill in the other repositories reaches {threshold}.", style="dim"))
+    pct = similarity.percent
+    for c in matches:
+        m, other = c.match, c.match.skill
+        head = Text()
+        head.append(f"{pct(m.score):>4} ", style=LEVEL_STYLE[c.level])
+        head.append(f"{STATUS_TEXT[c.status]:<12}", style="magenta")
+        head.append(_s(c.repo.repo_key), style="cyan")
+        head.append(" · ")
+        head.append(_s(other.name), style="bold")
+        if other.name != skill.name:
+            head.append("  other name", style="yellow")
+        info = (
+            f"     vocabulary {pct(m.topic)} · shared text: {pct(m.overlap_here)} of this skill "
+            f"is in that one, {pct(m.overlap_there)} of that one is in this skill"
+        )
+        if m.copies:
+            info += f" · {m.copies + 1} locations"
+        parts += [head, Text(f"     {_s(other.path or other.source_pointer)}", style="dim")]
+        if c.status != "identical":
+            parts.append(Text(info))
+        parts.append(Text(""))
+    return Group(*parts)
+
+
 def repo_view(items: list[store.Loaded]) -> RenderableType:
     """Latest snapshot of one repository plus its scan history, newest first."""
     latest = items[-1]
@@ -303,15 +352,22 @@ class SnapshotScreen(Screen[None]):
         Binding("o", "open", "Open on GitHub"),
         Binding("e", "export", "Export"),
         *[
-            Binding(str(i + 1), f"tab('{name}')", name.title(), show=False)
+            Binding(str(i + 1), f"tab('{name}')", TAB_TITLES.get(name, name.title()), show=False)
             for i, name in enumerate(TABS)
         ],
     ]
 
     def __init__(
-        self, snapshot: Snapshot, snapshot_path: Path | None = None, *, can_go_back: bool = False
+        self,
+        snapshot: Snapshot,
+        snapshot_path: Path | None = None,
+        *,
+        can_go_back: bool = False,
+        store_dir: Path | None = None,
     ) -> None:
         super().__init__()
+        self.store_dir = store_dir
+        self._cross: tuple[crossrepo.CrossIndex, set[str]] | None = None
         self.snapshot = snapshot
         self.snapshot_path = snapshot_path
         self.can_go_back = can_go_back
@@ -336,7 +392,7 @@ class SnapshotScreen(Screen[None]):
                 yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
             with TabbedContent(id="tabs", initial="overview"):
                 for name in TABS:
-                    with TabPane(name.title(), id=name), VerticalScroll():
+                    with TabPane(TAB_TITLES.get(name, name.title()), id=name), VerticalScroll():
                         yield Static(id=f"{name}-view")
         yield Input(
             placeholder="export snapshot to path (Enter to save, Esc to cancel)", id="export"
@@ -446,14 +502,38 @@ class SnapshotScreen(Screen[None]):
         self._update_similar()
 
     def _update_similar(self) -> None:
-        # Comparing costs a pass over the snapshot: only while the tab is visible.
-        view = self.query_one("#similar-view", Static)
-        if self.query_one("#tabs", TabbedContent).active != "similar":
-            view.update(Text(""))
-            return
-        if self._index is None:
-            self._index = similarity.Index(self.snapshot)
-        view.update(similar_view(self._index, self._shown))
+        # Comparing costs a pass over the snapshot or the store: only while the tab is visible.
+        active = self.query_one("#tabs", TabbedContent).active
+        similar = self.query_one("#similar-view", Static)
+        if active == "similar":
+            if self._index is None:
+                self._index = similarity.Index(self.snapshot)
+            similar.update(similar_view(self._index, self._shown))
+        else:
+            similar.update(Text(""))
+        repos = self.query_one("#repos-view", Static)
+        if active == "repos":
+            index, exclude = self._cross_index()
+            repos.update(crossrepo_view(index, self._shown, exclude))
+        else:
+            repos.update(Text(""))
+
+    def _cross_index(self) -> tuple[crossrepo.CrossIndex | None, set[str]]:
+        if self.store_dir is None:
+            return None, set()
+        if self._cross is None:
+            db = aggregate.Store.open(self.store_dir)
+            index = crossrepo.CrossIndex([(db.identity(i), i) for i in db.latest()])
+            name = self.snapshot_path.name if self.snapshot_path else None
+            own = {db.identity(i) for i in db.snapshots if i.path.name == name}
+            # An unsaved snapshot: exclude its repository by repo_key.
+            own = own or {
+                db.identity(i)
+                for i in db.snapshots
+                if i.snapshot.source.repo_key == self.snapshot.source.repo_key
+            }
+            self._cross = (index, own)
+        return self._cross
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         self._update_similar()
@@ -780,7 +860,9 @@ class ReposScreen(Screen[None]):
         if items is None:
             return
         latest = items[-1]
-        self.app.push_screen(SnapshotScreen(latest.snapshot, latest.path, can_go_back=True))
+        self.app.push_screen(
+            SnapshotScreen(latest.snapshot, latest.path, can_go_back=True, store_dir=self.store_dir)
+        )
 
     def action_search(self) -> None:
         search = self.query_one("#search", Input)
@@ -812,13 +894,21 @@ class AtlasApp(App[None]):
 
     TITLE = "skill-atlas"
 
-    def __init__(self, snapshot: Snapshot, snapshot_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        snapshot: Snapshot,
+        snapshot_path: Path | None = None,
+        store_dir: Path | None = None,
+    ) -> None:
         super().__init__()
         self.snapshot = snapshot
         self.snapshot_path = snapshot_path
+        self.store_dir = store_dir
 
     def on_mount(self) -> None:
-        self.push_screen(SnapshotScreen(self.snapshot, self.snapshot_path))
+        self.push_screen(
+            SnapshotScreen(self.snapshot, self.snapshot_path, store_dir=self.store_dir)
+        )
 
 
 class BrowserApp(App[None]):

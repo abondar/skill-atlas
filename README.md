@@ -69,6 +69,11 @@ score is the maximum of two deterministic signals: TF-IDF cosine over name, desc
 and body words, and the share of 5-word passages one body copies from the other. It is
 lexical: paraphrases in different words score low. See SPEC section 5.7.
 
+The Other repos tab (TUI key `8`) finds the same skill in the latest snapshots of the
+other repositories in the store: identical copies, edited copies (forks) and rewrites.
+It links skills by content, not by name, and the web Skills page groups them into
+families. See SPEC section 5.8.
+
 ## Store and aggregation
 
 Snapshots live in `$SKILL_ATLAS_HOME/scans/` (default `~/.local/share/skill-atlas/scans/`),
@@ -88,7 +93,7 @@ skill-atlas show github.com/anthropics/skills --plain
 ## TUI keys
 
 `j/k` move · `/` search · `g` category · `f` kind · `t` type · `c` compliance · `d` group copies ·
-`1`–`7` tabs (6 = how the snapshot was made, 7 = similar skills) · `o` open on GitHub · `e` export ·
+`1`–`8` tabs (6 = how the snapshot was made, 7 = similar skills, 8 = other repositories) · `o` open on GitHub · `e` export ·
 `Enter` open repository · `n` scan a new repository · `Esc` back · `q` quit
 
 Identical copies of one skill in several directories (same kind, name and content)

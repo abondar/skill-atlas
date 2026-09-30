@@ -236,3 +236,30 @@ def test_similar_skills(client: httpx.Client, tmp_path: Path) -> None:
     assert (
         client.get("/api/similar", params={"file": "../x.json", "id": ids["a"]}).status_code == 404
     )
+
+
+def test_crossrepo_and_families(client: httpx.Client, tmp_path: Path) -> None:
+    body = "Run the Gradle wrapper, bump the version, check plugin compatibility and tests.\n" * 5
+    directory = Path(client.get("/api/repos").json()["store"])
+    for repo, extra in (("up", ""), ("down", "One more step.\n")):
+        root = make_tree(
+            tmp_path / repo,
+            {"skills/bump/SKILL.md": f"---\nname: bump\ndescription: d\n---\n{body}{extra}"},
+        )
+        store.save(scan_path(root), directory)
+    repos = {
+        r["repo_key"].rsplit("/", 1)[1].rsplit("-", 1)[0]: r
+        for r in client.get("/api/repos").json()["repos"]
+    }
+    name = repos["up"]["latest"]["file"]
+    [skill_id] = [
+        s["id"] for s in client.get("/api/snapshot", params={"file": name}).json()["skills"]
+    ]
+    data = client.get("/api/crossrepo", params={"file": name, "id": skill_id}).json()
+    [match] = data["matches"]
+    assert match["repo_id"] == repos["down"]["id"] and match["status"] == "fork"
+    assert match["overlap_here"] == 1.0 and data["repos"] == 2
+    rows = [s for s in client.get("/api/skills").json()["skills"] if s["name"] == "bump"]
+    assert len(rows) == 2 and rows[0]["family"] == rows[1]["family"]
+    assert rows[0]["family_name"] == "bump"
+    assert client.get("/api/crossrepo", params={"file": name, "id": "x"}).status_code == 404

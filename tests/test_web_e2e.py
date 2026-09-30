@@ -111,7 +111,9 @@ def test_web_ui_in_a_real_browser(tmp_path: Path) -> None:
         },
     )
     fresh = make_tree(
-        tmp_path / "fresh", {".claude/skills/hello/SKILL.md": skill("hello", "Says hello.")}
+        tmp_path / "fresh",
+        # Copied from koog's add-java under another name: found under Other repos.
+        {".claude/skills/hello/SKILL.md": skill("hello", "Says hello.", java_body)},
     )
     scans = tmp_path / "scans"
     for root in (koog, mps):

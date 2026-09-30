@@ -14,6 +14,7 @@ Security model:
 from __future__ import annotations
 
 import functools
+import hashlib
 import http.server
 import json
 import secrets
@@ -30,7 +31,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from markdown_it import MarkdownIt
 
-from skill_atlas import aggregate, categories, similarity, store
+from skill_atlas import aggregate, categories, crossrepo, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
@@ -177,6 +178,20 @@ class JobProgress:
         self._stage = ""
 
 
+@dataclass
+class CrossState:
+    """The cross-repository index for one state of the store."""
+
+    names: tuple[str, ...]  # snapshot files in the store when the index was built
+    db: aggregate.Store
+    index: crossrepo.CrossIndex
+    families: dict[similarity.Key, similarity.Key]
+
+    def family(self, key: similarity.Key) -> str:
+        root = self.families.get(key, key)
+        return hashlib.sha256(repr(root).encode()).hexdigest()[:12]
+
+
 class WebApp:
     """Request-independent state and the API implementation."""
 
@@ -188,6 +203,8 @@ class WebApp:
         self._lock = threading.Lock()
         # Snapshot files are immutable, so an index never goes stale.
         self._indexes: dict[str, tuple[Snapshot, similarity.Index]] = {}
+        self._cross: CrossState | None = None
+        self._cross_lock = threading.Lock()  # one build at a time; queries wait for it
 
     # --- store ----------------------------------------------------------------------
 
@@ -222,10 +239,30 @@ class WebApp:
         rows.sort(key=lambda r: r["latest"]["scanned_at"], reverse=True)
         return dict(_clean({"store": str(self.store_dir), "warnings": db.warnings, "repos": rows}))
 
+    def cross(self) -> CrossState:
+        """The cross-repository index, rebuilt when the set of snapshot files changes."""
+        names = tuple(sorted(p.name for p in self.store_dir.glob("*.json")))
+        with self._cross_lock:
+            if self._cross is None or self._cross.names != names:
+                db = self._open()
+                index = crossrepo.CrossIndex([(db.identity(i), i) for i in db.latest()])
+                self._cross = CrossState(names, db, index, index.families())
+            return self._cross
+
     def skills(self, category: str = "relevant") -> dict[str, Any]:
-        """Skills from the latest snapshot of every repository, without bodies."""
-        db = self._open()
+        """Skills from the latest snapshot of every repository, without bodies.
+
+        `family` groups the same skill across repositories (SPEC section 5.8).
+        """
+        state = self.cross()
+        db = state.db
         ids = {id(item): ident for ident, items in db.by_repo().items() for item in items}
+        names: dict[str, dict[str, int]] = {}
+        for item in db.latest():
+            for s in item.snapshot.skills:
+                if s.name:
+                    counts = names.setdefault(state.family(dup_key(s)), {})
+                    counts[s.name] = counts.get(s.name, 0) + 1
         rows = []
         for item in db.latest():
             snap = item.snapshot
@@ -246,6 +283,12 @@ class WebApp:
                         "compliance": s.compliance.status,
                         "content_sha256": s.content_sha256,
                         "path": s.path or s.source_pointer,
+                        "family": (family := state.family(dup_key(s))),
+                        # The most common name in the family, then the alphabetical first.
+                        "family_name": min(
+                            names.get(family, {}).items() or [(s.name or "(unnamed)", 0)],
+                            key=lambda kv: (-kv[1], kv[0]),
+                        )[0],
                     }
                 )
         return dict(_clean({"skills": rows}))
@@ -322,6 +365,50 @@ class WebApp:
         ]
         return dict(
             _clean({"threshold": similarity.THRESHOLD, "similar": rows, "versions": versions})
+        )
+
+    def crossrepo(self, name: str, skill_id: str) -> dict[str, Any] | None:
+        """The skill in other repositories: matches in their latest snapshots."""
+        if self._snapshot_path(name) is None:
+            return None
+        state = self.cross()
+        item = next((i for i in state.db.snapshots if i.path.name == name), None)
+        if item is None:
+            return None
+        skill = next((s for s in item.snapshot.skills if s.id == skill_id), None)
+        if skill is None:
+            return None
+        rows = [
+            {
+                "repo_id": c.repo.ident,
+                "repo_key": c.repo.repo_key,
+                "file": c.repo.path.name,
+                "id": c.match.skill.id,
+                "name": c.match.skill.name,
+                "description": (c.match.skill.description or "")[:400],
+                "kind": c.match.skill.kind,
+                "type": c.match.skill.type,
+                "category": c.match.skill.category,
+                "path": c.match.skill.path or c.match.skill.source_pointer,
+                "status": c.status,
+                "score": round(c.match.score, 3),
+                "level": c.level,
+                "topic": round(c.match.topic, 3),
+                "overlap_here": round(c.match.overlap_here, 3),
+                "overlap_there": round(c.match.overlap_there, 3),
+                "shared_terms": list(c.match.shared_terms),
+                "copies": c.match.copies,
+            }
+            for c in state.index.matches(skill, {state.db.identity(item)})
+        ]
+        return dict(
+            _clean(
+                {
+                    "threshold": similarity.THRESHOLD,
+                    "repos": len(state.index.repos) - 1,
+                    "matches": rows,
+                }
+            )
         )
 
     def raw(self, name: str) -> bytes | None:
@@ -464,6 +551,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, view)
         elif path == "/api/similar":
             view = app.similar(name, query.get("id", [""])[0])
+            if view is None:
+                self._error(HTTPStatus.NOT_FOUND, "no such snapshot or skill")
+            else:
+                self._json(HTTPStatus.OK, view)
+        elif path == "/api/crossrepo":
+            view = app.crossrepo(name, query.get("id", [""])[0])
             if view is None:
                 self._error(HTTPStatus.NOT_FOUND, "no such snapshot or skill")
             else:
