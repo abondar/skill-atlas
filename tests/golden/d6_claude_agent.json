@@ -1,0 +1,110 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "x\n",
+      "body_bytes": 2,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "1a502b28ee29b05c87f371a8f2e3f90687289e488f4bdd61c52831e82d4e0a78",
+      "description": "Reviews code",
+      "description_source": "frontmatter",
+      "detector": "D6",
+      "dir": null,
+      "extras": {},
+      "frontmatter": {
+        "description": "Reviews code",
+        "name": "code-reviewer"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: code-reviewer\ndescription: Reviews code",
+      "git_blob_sha": "6370a4b3eb1e19a91c6f003ee4594865cf124bdd",
+      "id": "claude-agent:.claude/agents/reviewer.md",
+      "kind": "agent",
+      "name": "code-reviewer",
+      "name_source": "frontmatter",
+      "path": ".claude/agents/reviewer.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".claude",
+      "source_pointer": null,
+      "type": "claude-agent",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "No frontmatter agent\n",
+      "body_bytes": 21,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "962dd87c5bdc93681bd2223c5c87967834a8c8a8854096833bef11e72966bfc6",
+      "description": "No frontmatter agent",
+      "description_source": "body",
+      "detector": "D6",
+      "dir": null,
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": "8ef4abecbf0e12cbd0df29a0a67ee810a406c7e1",
+      "id": "claude-agent:.claude/agents/team/qa.md",
+      "kind": "agent",
+      "name": "team:qa",
+      "name_source": "path",
+      "path": ".claude/agents/team/qa.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".claude",
+      "source_pointer": null,
+      "type": "claude-agent",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "d6_claude_agent",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 2,
+    "by_compliance": {
+      "loadable": 2
+    },
+    "by_type": {
+      "claude-agent": 2
+    },
+    "skills": 0
+  }
+}

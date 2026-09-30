@@ -1,0 +1,79 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 1,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# real\n\nSteps.\n",
+      "body_bytes": 15,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "f0f92679c9e54fde10f61e1900c351d20158a5594bbb2bdbce7fc6f2ae6d9fae",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/real",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "real"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: real\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "afd0005957f3df334313e4754af6ae47d5b4fc83",
+      "id": "agent-skill:skills/real/SKILL.md",
+      "kind": "skill",
+      "name": "real",
+      "name_source": "frontmatter",
+      "path": "skills/real/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "noise",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "compliant": 1
+    },
+    "by_type": {
+      "agent-skill": 1
+    },
+    "skills": 1
+  }
+}

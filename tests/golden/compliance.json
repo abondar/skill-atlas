@@ -1,0 +1,356 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": [
+      "skills/lower/skill.md: ignored; the Agent Skills spec requires 'SKILL.md'"
+    ]
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# Upper\n\nSteps.\n",
+      "body_bytes": 16,
+      "body_lines": 4,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "name-invalid",
+            "message": "'name' must be lowercase a-z, 0-9 and single inner hyphens"
+          }
+        ]
+      },
+      "content_sha256": "05182918045a1cf75bcb73d5c5393bd452280fd44b0a7bc6b488666d2943ac6a",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/Upper",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "Upper"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: Upper\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "8df2d227ce4943e9b49db434d3cd8554c1534e6e",
+      "id": "agent-skill:skills/Upper/SKILL.md",
+      "kind": "skill",
+      "name": "Upper",
+      "name_source": "frontmatter",
+      "path": "skills/Upper/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "x\n",
+      "body_bytes": 2,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "frontmatter-invalid",
+            "message": "YAML anchors are not allowed"
+          }
+        ]
+      },
+      "content_sha256": "c2d3fa78fb995496f0ced9d6d07c95ceaa7c36db8e50c01dbfda571d21a1819e",
+      "description": "x",
+      "description_source": "body",
+      "detector": "D1",
+      "dir": "skills/alias",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": "YAML anchors are not allowed",
+      "frontmatter_raw": "a: &x 1\nb: *x",
+      "git_blob_sha": "86a4579e592b543767ba7aa5644cfe58c2462078",
+      "id": "agent-skill:skills/alias/SKILL.md",
+      "kind": "skill",
+      "name": "alias",
+      "name_source": "path",
+      "path": "skills/alias/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": [
+        "frontmatter: YAML anchors are not allowed"
+      ]
+    },
+    {
+      "aliases": [],
+      "body": "body\n",
+      "body_bytes": 5,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "frontmatter-invalid",
+            "message": "invalid YAML at line 1: expected ',' or ']', but got '<stream end>'"
+          }
+        ]
+      },
+      "content_sha256": "58baaabf463628ae6a1e9ec8ae9a6ef51521f861629c39a5c2c66b70e4ff93a5",
+      "description": "body",
+      "description_source": "body",
+      "detector": "D1",
+      "dir": "skills/bad-yaml",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": "invalid YAML at line 1: expected ',' or ']', but got '<stream end>'",
+      "frontmatter_raw": "name: [unclosed",
+      "git_blob_sha": "297e44565b6de6781a80b342ac72144f9ac0bcb0",
+      "id": "agent-skill:skills/bad-yaml/SKILL.md",
+      "kind": "skill",
+      "name": "bad-yaml",
+      "name_source": "path",
+      "path": "skills/bad-yaml/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": [
+        "frontmatter: invalid YAML at line 1: expected ',' or ']', but got '<stream end>'"
+      ]
+    },
+    {
+      "aliases": [],
+      "body": "# long\n\nSteps.\n",
+      "body_bytes": 15,
+      "body_lines": 4,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "description-too-long",
+            "message": "'description' has 1100 characters; max is 1024"
+          }
+        ]
+      },
+      "content_sha256": "f05be513677bf81641c881f47caec14fdb771b917072bb0aeaa677c696b5ef6f",
+      "description": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/long",
+      "extras": {},
+      "frontmatter": {
+        "description": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "name": "long"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: long\ndescription: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "git_blob_sha": "bc5b3c126672cdf795d891b9255f4492380a22ee",
+      "id": "agent-skill:skills/long/SKILL.md",
+      "kind": "skill",
+      "name": "long",
+      "name_source": "frontmatter",
+      "path": "skills/long/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# meta\n\nSteps.\n",
+      "body_bytes": 15,
+      "body_lines": 4,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "metadata-invalid",
+            "message": "'metadata' must map strings to strings"
+          }
+        ]
+      },
+      "content_sha256": "8356e03eabd801f41216bacc53a5729b433c84291740d92feb9d5911f2d78d1b",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/meta",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "metadata": {
+          "version": 1.0
+        },
+        "name": "meta"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: meta\ndescription: Does a thing. Use when needed.\nmetadata:\n  version: 1.0",
+      "git_blob_sha": "91996b17d1baef2f881b8599ec09ab72f67a0493",
+      "id": "agent-skill:skills/meta/SKILL.md",
+      "kind": "skill",
+      "name": "meta",
+      "name_source": "frontmatter",
+      "path": "skills/meta/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# other-name\n\nSteps.\n",
+      "body_bytes": 21,
+      "body_lines": 4,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "name-dir-mismatch",
+            "message": "'name' 'other-name' does not match directory 'mismatch'"
+          }
+        ]
+      },
+      "content_sha256": "b104a5d3fa25d7a54df5d350542cd4a7598b2da1c920312840841a57301b6e2f",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/mismatch",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "other-name"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: other-name\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "9f3c51b7367fa5dc7db1ba75d9b081ee943fe049",
+      "id": "agent-skill:skills/mismatch/SKILL.md",
+      "kind": "skill",
+      "name": "other-name",
+      "name_source": "frontmatter",
+      "path": "skills/mismatch/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "Just a body line\n\nMore.\n",
+      "body_bytes": 24,
+      "body_lines": 4,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "frontmatter-missing",
+            "message": "SKILL.md has no YAML frontmatter"
+          }
+        ]
+      },
+      "content_sha256": "1a72651c726b1aad0a74903e3f1c08881a3a70097b4bedc32b95cd10e311a934",
+      "description": "Just a body line",
+      "description_source": "body",
+      "detector": "D1",
+      "dir": "skills/no-frontmatter",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": "4893ac94e317822f24d92077a8eb4fa00c6622e5",
+      "id": "agent-skill:skills/no-frontmatter/SKILL.md",
+      "kind": "skill",
+      "name": "no-frontmatter",
+      "name_source": "path",
+      "path": "skills/no-frontmatter/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "---\nname: unterminated\n",
+      "body_bytes": 23,
+      "body_lines": 3,
+      "compliance": {
+        "status": "loadable",
+        "violations": [
+          {
+            "code": "frontmatter-missing",
+            "message": "unterminated frontmatter"
+          }
+        ]
+      },
+      "content_sha256": "43ac3e30c3f9f9b1dbc0d400fa5c95f7d8fd4faf7cd71eda15ac71ce94b0c239",
+      "description": "---",
+      "description_source": "body",
+      "detector": "D1",
+      "dir": "skills/unterminated",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": "unterminated frontmatter",
+      "frontmatter_raw": null,
+      "git_blob_sha": "5db0e5ee9c12e025b6af3d3b3f1d87466e486381",
+      "id": "agent-skill:skills/unterminated/SKILL.md",
+      "kind": "skill",
+      "name": "unterminated",
+      "name_source": "path",
+      "path": "skills/unterminated/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": [
+        "frontmatter: unterminated frontmatter"
+      ]
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "compliance",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "loadable": 8
+    },
+    "by_type": {
+      "agent-skill": 8
+    },
+    "skills": 8
+  }
+}

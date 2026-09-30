@@ -1,0 +1,91 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# ui\n\nSteps.\n",
+      "body_bytes": 13,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "dc8a0f3a0021f044907b9a232c27d986f8a7199a6c63d8c78e8f32ed5f32b748",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/ui",
+      "extras": {
+        "openai_yaml": {
+          "interface": {
+            "display_name": "UI Helper"
+          }
+        }
+      },
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "ui"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: ui\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "6fedf1a4a7f0c1af18c5ba202d459065cbabc394",
+      "id": "agent-skill:skills/ui/SKILL.md",
+      "kind": "skill",
+      "name": "ui",
+      "name_source": "frontmatter",
+      "path": "skills/ui/SKILL.md",
+      "plugin_id": null,
+      "resources": [
+        {
+          "bytes": 37,
+          "git_blob_sha": "44a1c7266b625ca40e9f7aaab0ec6b8b86e376f4",
+          "path": "skills/ui/agents/openai.yaml"
+        }
+      ],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "openai_yaml",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "compliant": 1
+    },
+    "by_type": {
+      "agent-skill": 1
+    },
+    "skills": 1
+  }
+}

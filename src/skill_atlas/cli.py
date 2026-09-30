@@ -1,0 +1,332 @@
+"""Command-line interface (SPEC section 3)."""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import sys
+from pathlib import Path
+from typing import Annotated, Literal
+
+import typer
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
+
+from skill_atlas import __version__, aggregate, store
+from skill_atlas.errors import AtlasError, StoreError, UsageError
+from skill_atlas.model import Snapshot
+from skill_atlas.plain import render as render_plain
+from skill_atlas.progress import ConsoleProgress, NullProgress
+from skill_atlas.sanitize import sanitize_line
+from skill_atlas.scan import ScanRequest, run_scan
+
+app = typer.Typer(
+    add_completion=False,
+    help=(
+        "Find, browse and catalogue AI agent skills in repositories. "
+        "Without a command, opens the TUI over all saved snapshots."
+    ),
+)
+out = Console(highlight=False, soft_wrap=True)
+err = Console(stderr=True, highlight=False, soft_wrap=True)
+
+
+PLAIN_OPTION = typer.Option(
+    "--plain", help="Print a plain-text report (no TUI, no colors) for scripts and agents."
+)
+WITH_BODY_OPTION = typer.Option("--with-body", help="With --plain: include skill bodies.")
+
+
+def _version(value: bool) -> None:
+    if value:
+        out.print(f"skill-atlas {__version__}")
+        raise typer.Exit()
+
+
+@app.callback(invoke_without_command=True)
+def _root(
+    ctx: typer.Context,
+    version: Annotated[
+        bool, typer.Option("--version", callback=_version, is_eager=True, help="Show version.")
+    ] = False,
+) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    if not _interactive():
+        typer.echo(ctx.get_help())
+        return
+    from skill_atlas.tui import BrowserApp
+
+    db = aggregate.Store.open(store.scans_dir())
+    _print_warnings(db.warnings)
+    BrowserApp(db, store.scans_dir()).run()
+
+
+def _cell(value: object) -> Text:
+    return Text(sanitize_line(str(value)) if value is not None else "—")
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _run_tui(snapshot: Snapshot, path: Path | None) -> None:
+    from skill_atlas.tui import AtlasApp
+
+    AtlasApp(snapshot, path).run()
+
+
+def print_summary(console: Console, snapshot: Snapshot, path: Path | None, cache_hit: bool) -> None:
+    src = snapshot.source
+    sha = (src.commit_sha or "")[:12] or "no commit"
+    dirty = " (dirty)" if src.dirty else ""
+    console.print(Text(f"{sanitize_line(src.repo_key)}@{sha}{dirty}", style="bold"))
+    console.print(
+        f"{snapshot.stats.skills} skills, {snapshot.stats.agents} agents, "
+        f"{len(snapshot.plugins)} plugins"
+    )
+    if snapshot.skills:
+        table = Table(box=None, header_style="bold cyan", pad_edge=False)
+        for col in ("kind", "name", "type", "compliance", "path"):
+            table.add_column(col)
+        for s in snapshot.skills:
+            table.add_row(
+                s.kind,
+                _cell(s.name),
+                s.type,
+                s.compliance.status,
+                _cell(s.path or s.source_pointer),
+            )
+        console.print(table)
+    if snapshot.scan.warnings:
+        console.print(f"{len(snapshot.scan.warnings)} scan warnings", style="yellow")
+    if path is not None:
+        label = "cached snapshot" if cache_hit else "snapshot"
+        console.print(Text(f"{label}: {path}"))
+    else:
+        console.print("snapshot not saved (--no-save)")
+
+
+@app.command()
+def scan(
+    target: Annotated[str, typer.Argument(help="GitHub URL, owner/repo, or local path.")],
+    ref: Annotated[str | None, typer.Option(help="Branch, tag or commit SHA.")] = None,
+    path: Annotated[str | None, typer.Option(help="Scan only this subdirectory.")] = None,
+    include: Annotated[
+        list[str] | None, typer.Option(help="Glob that overrides fixture and --exclude rules.")
+    ] = None,
+    exclude: Annotated[list[str] | None, typer.Option(help="Glob to exclude.")] = None,
+    include_fixtures: Annotated[
+        bool, typer.Option("--include-fixtures", help="Do not exclude test fixture dirs.")
+    ] = False,
+    no_tui: Annotated[
+        bool, typer.Option("--no-tui", help="Do not open the TUI; save and print a summary.")
+    ] = False,
+    output: Annotated[
+        str | None, typer.Option("--output", "-o", help="Also write the snapshot to FILE or -.")
+    ] = None,
+    no_save: Annotated[
+        bool, typer.Option("--no-save", help="Do not write the snapshot to the store.")
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Write a new snapshot on cache hit; overwrite --output."),
+    ] = False,
+    host: Annotated[str, typer.Option(help="GitHub host for owner/repo targets.")] = "github.com",
+    plain: Annotated[bool, PLAIN_OPTION] = False,
+    with_body: Annotated[bool, WITH_BODY_OPTION] = False,
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="Do not report progress on stderr.")
+    ] = False,
+) -> None:
+    """Scan a repository, save a snapshot and open it in the TUI."""
+    if plain and output == "-":
+        raise UsageError("--plain and --output - both write to stdout; choose one")
+    if output and output != "-" and Path(output).exists() and not force:
+        raise UsageError(f"{output} exists; pass --force to overwrite")
+    req = ScanRequest(
+        target=target,
+        ref=ref,
+        path=path,
+        include=include or [],
+        exclude=exclude or [],
+        include_fixtures=include_fixtures,
+        host=host.lower(),
+        force=force,
+    )
+    progress = NullProgress() if quiet else ConsoleProgress(err)
+    outcome = run_scan(req, store_dir=store.scans_dir(), save=not no_save, progress=progress)
+    for notice in outcome.notices:
+        err.print(Text(f"note: {sanitize_line(notice)}"), style="yellow")
+
+    if output == "-":
+        sys.stdout.write(store.dumps(outcome.snapshot))
+        print_summary(err, outcome.snapshot, outcome.saved_path, outcome.cache_hit)
+        return
+    if output:
+        try:
+            Path(output).write_text(store.dumps(outcome.snapshot), encoding="utf-8")
+        except OSError as exc:
+            raise StoreError(f"cannot write {output}: {exc}") from None
+    if plain:
+        sys.stdout.write(render_plain(outcome.snapshot, outcome.saved_path, with_body=with_body))
+        return
+    if no_tui or not _interactive():
+        print_summary(out, outcome.snapshot, outcome.saved_path, outcome.cache_hit)
+        return
+    _run_tui(outcome.snapshot, outcome.saved_path)
+
+
+@app.command()
+def repos(
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+    sort: Annotated[
+        Literal["scanned", "skills", "name"], typer.Option(help="Sort order.")
+    ] = "scanned",
+) -> None:
+    """List known repositories and their latest scans."""
+    db = aggregate.Store.open(store.scans_dir())
+    _print_warnings(db.warnings)
+    rows = aggregate.repos(db, sort)
+    if as_json:
+        out.print_json(json.dumps([dataclasses.asdict(r) for r in rows]))
+        return
+    if not rows:
+        out.print(f"no snapshots in {store.scans_dir()}")
+        return
+    table = Table(box=None, header_style="bold cyan", pad_edge=False)
+    for col in ("repo", "last scan", "commit", "skills", "agents", "scans"):
+        table.add_column(col, justify="right" if col in ("skills", "agents", "scans") else "left")
+    for r in rows:
+        sha = (r.commit_sha or "")[:8] + (" dirty" if r.dirty else "")
+        table.add_row(
+            _cell(r.repo_key),
+            r.last_scanned_at,
+            sha or "—",
+            str(r.skills),
+            str(r.agents),
+            str(r.scans),
+        )
+    out.print(table)
+    out.print(f"{len(rows)} repositories, {sum(r.skills for r in rows)} skills")
+
+
+@app.command()
+def skills(
+    name: Annotated[str | None, typer.Option(help="Substring of the skill name.")] = None,
+    repo: Annotated[str | None, typer.Option(help="Exact repo_key.")] = None,
+    type_: Annotated[str | None, typer.Option("--type", help="Skill type.")] = None,
+    kind: Annotated[Literal["skill", "agent", "all"], typer.Option(help="Entry kind.")] = "skill",
+    group_by: Annotated[Literal["none", "name", "hash"], typer.Option(help="Group rows.")] = "none",
+    all_scans: Annotated[
+        bool, typer.Option("--all-scans", help="Use every snapshot, not only the latest.")
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+) -> None:
+    """List skills across the latest snapshot of each repository."""
+    db = aggregate.Store.open(store.scans_dir())
+    _print_warnings(db.warnings)
+    rows = aggregate.skill_rows(
+        db,
+        name=name,
+        repo=repo,
+        type_=type_,
+        kind=None if kind == "all" else kind,
+        all_scans=all_scans,
+    )
+    if group_by != "none":
+        groups = aggregate.group(rows, group_by)
+        if as_json:
+            out.print_json(json.dumps([dataclasses.asdict(g) for g in groups]))
+            return
+        table = Table(box=None, header_style="bold cyan", pad_edge=False)
+        key_label = "name" if group_by == "name" else "sha256"
+        for col in (key_label, "repos", "variants", "types", "names" if group_by == "hash" else ""):
+            if col:
+                table.add_column(col)
+        for g in groups:
+            key = g.key if group_by == "name" else g.key[:12]
+            cells: list[Text | str] = [
+                _cell(key),
+                str(len(g.repos)),
+                str(g.variants),
+                ", ".join(g.types),
+            ]
+            if group_by == "hash":
+                cells.append(_cell(", ".join(g.names)))
+            table.add_row(*cells)
+        out.print(table)
+        out.print(f"{len(groups)} groups, {len(rows)} skills")
+        return
+    if as_json:
+        out.print_json(
+            json.dumps(
+                [
+                    {
+                        "repo_key": r.repo_key,
+                        "commit_sha": r.commit_sha,
+                        "scanned_at": r.scanned_at,
+                        "skill": r.skill.model_dump(mode="json", exclude={"body"}),
+                    }
+                    for r in rows
+                ]
+            )
+        )
+        return
+    table = Table(box=None, header_style="bold cyan", pad_edge=False)
+    for col in ("repo", "name", "type", "compliance", "path"):
+        table.add_column(col)
+    for r in rows:
+        s = r.skill
+        table.add_row(
+            _cell(r.repo_key),
+            _cell(s.name),
+            s.type,
+            s.compliance.status,
+            _cell(s.path or s.source_pointer),
+        )
+    out.print(table)
+    out.print(f"{len(rows)} skills")
+
+
+@app.command()
+def show(
+    ref: Annotated[str, typer.Argument(help="repo_key[@sha] or a snapshot JSON file.")],
+    plain: Annotated[bool, PLAIN_OPTION] = False,
+    with_body: Annotated[bool, WITH_BODY_OPTION] = False,
+) -> None:
+    """Open a saved snapshot in the TUI without network access."""
+    candidate = Path(ref).expanduser()
+    if candidate.is_file():
+        snapshot, path = store.load(candidate), candidate
+    else:
+        repo_key, _, sha = ref.partition("@")
+        db = aggregate.Store.open(store.scans_dir())
+        _print_warnings(db.warnings)
+        found = db.find(repo_key, sha or None)
+        if found is None:
+            raise UsageError(f"no snapshot for {ref!r}; see `skill-atlas repos`")
+        snapshot, path = found.snapshot, found.path
+    if plain:
+        sys.stdout.write(render_plain(snapshot, path, with_body=with_body))
+        return
+    if not _interactive():
+        print_summary(out, snapshot, path, cache_hit=False)
+        return
+    _run_tui(snapshot, path)
+
+
+def _print_warnings(warnings: list[str]) -> None:
+    for w in warnings:
+        err.print(Text(f"warning: {sanitize_line(w)}"), style="yellow")
+
+
+def main() -> None:
+    # Standalone mode lets Typer report usage errors with exit code 2.
+    # Our own errors carry their exit codes (SPEC section 3.3).
+    try:
+        app()
+    except AtlasError as exc:
+        err.print(Text(f"error: {sanitize_line(str(exc))}"), style="red")
+        sys.exit(exc.exit_code)

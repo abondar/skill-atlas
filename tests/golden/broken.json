@@ -1,0 +1,189 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": null,
+      "body_bytes": null,
+      "body_lines": null,
+      "compliance": {
+        "status": "broken",
+        "violations": [
+          {
+            "code": "too-large",
+            "message": "file exceeds 1048576 bytes"
+          }
+        ]
+      },
+      "content_sha256": null,
+      "description": null,
+      "description_source": null,
+      "detector": "D1",
+      "dir": "skills/big",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": null,
+      "id": "agent-skill:skills/big/SKILL.md",
+      "kind": "skill",
+      "name": "big",
+      "name_source": "path",
+      "path": "skills/big/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": null,
+      "body_bytes": null,
+      "body_lines": null,
+      "compliance": {
+        "status": "broken",
+        "violations": [
+          {
+            "code": "binary",
+            "message": "file contains NUL bytes"
+          }
+        ]
+      },
+      "content_sha256": null,
+      "description": null,
+      "description_source": null,
+      "detector": "D1",
+      "dir": "skills/binary",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": null,
+      "id": "agent-skill:skills/binary/SKILL.md",
+      "kind": "skill",
+      "name": "binary",
+      "name_source": "path",
+      "path": "skills/binary/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": null,
+      "body_bytes": null,
+      "body_lines": null,
+      "compliance": {
+        "status": "broken",
+        "violations": [
+          {
+            "code": "encoding",
+            "message": "invalid UTF-8: invalid continuation byte"
+          }
+        ]
+      },
+      "content_sha256": null,
+      "description": null,
+      "description_source": null,
+      "detector": "D1",
+      "dir": "skills/latin1",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": null,
+      "id": "agent-skill:skills/latin1/SKILL.md",
+      "kind": "skill",
+      "name": "latin1",
+      "name_source": "path",
+      "path": "skills/latin1/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": null,
+      "body_bytes": null,
+      "body_lines": null,
+      "compliance": {
+        "status": "broken",
+        "violations": [
+          {
+            "code": "lfs-pointer",
+            "message": "file is a Git LFS pointer"
+          }
+        ]
+      },
+      "content_sha256": null,
+      "description": null,
+      "description_source": null,
+      "detector": "D1",
+      "dir": "skills/lfs",
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": null,
+      "id": "agent-skill:skills/lfs/SKILL.md",
+      "kind": "skill",
+      "name": "lfs",
+      "name_source": "path",
+      "path": "skills/lfs/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "broken",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "broken": 4
+    },
+    "by_type": {
+      "agent-skill": 4
+    },
+    "skills": 4
+  }
+}

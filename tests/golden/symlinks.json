@@ -1,0 +1,89 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": [
+      "skills/dangling: dangling symlink to 'nowhere'"
+    ]
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [
+        ".claude/skills/shared/SKILL.md"
+      ],
+      "body": "# shared\n\nSteps.\n",
+      "body_bytes": 17,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "5e19cd94f0550cb678006107dd881923583558dd62a7aac13db33a1af72114cc",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": ".agents/skills/shared",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "shared"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: shared\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "9937871b3071e1ba19abef8c85b430e859744a97",
+      "id": "agent-skill:.agents/skills/shared/SKILL.md",
+      "kind": "skill",
+      "name": "shared",
+      "name_source": "frontmatter",
+      "path": ".agents/skills/shared/SKILL.md",
+      "plugin_id": null,
+      "resources": [
+        {
+          "bytes": 6,
+          "git_blob_sha": "bfa655111293037a5564088d1a9bbca4cbcf446b",
+          "path": ".agents/skills/shared/notes.md"
+        }
+      ],
+      "scope": ".agents/skills",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "symlinks",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "compliant": 1
+    },
+    "by_type": {
+      "agent-skill": 1
+    },
+    "skills": 1
+  }
+}

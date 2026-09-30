@@ -1,0 +1,159 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# review\n\nSteps.\n",
+      "body_bytes": 17,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "0eaa530ffee1b1168f2aa0fe26bd46b3f333b8b33bf8100aaa6752d7f13d84ed",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": ".agents/skills/cat/review",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "review"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: review\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "e1c00a46dd59a70542d85fb78cd18b247eab48f4",
+      "id": "agent-skill:.agents/skills/cat/review/SKILL.md",
+      "kind": "skill",
+      "name": "review",
+      "name_source": "frontmatter",
+      "path": ".agents/skills/cat/review/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".agents/skills",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# pdf\n\nSteps.\n",
+      "body_bytes": 14,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "6c4de6f44388767e9c206e8c64e41b081a8e87a390e7e0a15e28ab7e916a1ea1",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": ".claude/skills/pdf",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "license": "MIT",
+        "name": "pdf"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: pdf\ndescription: Does a thing. Use when needed.\nlicense: MIT",
+      "git_blob_sha": "43fe329b2e8eff970b9e218da15923be96c13328",
+      "id": "agent-skill:.claude/skills/pdf/SKILL.md",
+      "kind": "skill",
+      "name": "pdf",
+      "name_source": "frontmatter",
+      "path": ".claude/skills/pdf/SKILL.md",
+      "plugin_id": null,
+      "resources": [
+        {
+          "bytes": 12,
+          "git_blob_sha": "cf5aa0741655527ad33df71941044c0a8d60fc60",
+          "path": ".claude/skills/pdf/references/REFERENCE.md"
+        },
+        {
+          "bytes": 11,
+          "git_blob_sha": "4b5d2cb5f374cc5e66de7a2ebdf35ff1d210654f",
+          "path": ".claude/skills/pdf/scripts/extract.py"
+        }
+      ],
+      "scope": ".claude/skills",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# unscoped\n\nSteps.\n",
+      "body_bytes": 19,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "41feea0aa659fa3408aba2fbc7dc8b0875ab4e6fdc72dd1288f1376d920eb6d1",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/unscoped",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "unscoped"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: unscoped\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "2ce568fc14bcf7e541d72592ba5433ad93d716e1",
+      "id": "agent-skill:skills/unscoped/SKILL.md",
+      "kind": "skill",
+      "name": "unscoped",
+      "name_source": "frontmatter",
+      "path": "skills/unscoped/SKILL.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "d1_agent_skill",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "compliant": 3
+    },
+    "by_type": {
+      "agent-skill": 3
+    },
+    "skills": 3
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "plugins": [
+    {
+      "description": null,
+      "id": ".#art",
+      "manifest_path": null,
+      "marketplace_path": ".claude-plugin/marketplace.json",
+      "name": "art",
+      "remote_source": null,
+      "root": "",
+      "version": null
+    },
+    {
+      "description": null,
+      "id": ".#docs",
+      "manifest_path": null,
+      "marketplace_path": ".claude-plugin/marketplace.json",
+      "name": "docs",
+      "remote_source": null,
+      "root": "",
+      "version": null
+    },
+    {
+      "description": null,
+      "id": ".claude-plugin/marketplace.json#remote",
+      "manifest_path": null,
+      "marketplace_path": ".claude-plugin/marketplace.json",
+      "name": "remote",
+      "remote_source": {
+        "repo": "o/r",
+        "source": "github"
+      },
+      "root": null,
+      "version": null
+    },
+    {
+      "description": null,
+      "id": "plugins/local",
+      "manifest_path": null,
+      "marketplace_path": ".claude-plugin/marketplace.json",
+      "name": "local",
+      "remote_source": null,
+      "root": "plugins/local",
+      "version": null
+    }
+  ],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# art\n\nSteps.\n",
+      "body_bytes": 14,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "4b9bc75cad48aedcf14a0a36d144d8dc796bc21c1ca6c40202dce2de358ba837",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/art",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "art"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: art\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "4bd1bcc2a4aef4986d9f961c8a335e942e8e99ae",
+      "id": "agent-skill:skills/art/SKILL.md",
+      "kind": "skill",
+      "name": "art",
+      "name_source": "frontmatter",
+      "path": "skills/art/SKILL.md",
+      "plugin_id": ".#art",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# docx\n\nSteps.\n",
+      "body_bytes": 15,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "018e4a7931eb70813a27864241dda01ca0d95abaf6f38db6bcb56ab8f41ca912",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/docx",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "docx"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: docx\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "c0c649c5aebc5b80da90936262351471068a51dd",
+      "id": "agent-skill:skills/docx/SKILL.md",
+      "kind": "skill",
+      "name": "docx",
+      "name_source": "frontmatter",
+      "path": "skills/docx/SKILL.md",
+      "plugin_id": ".#docs",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "Say hello.\n",
+      "body_bytes": 11,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "3d023121b458e96ba79824c733745d3997b51fe7fb9921e810ffbedcf705f45c",
+      "description": "Say hello.",
+      "description_source": "body",
+      "detector": "D3",
+      "dir": null,
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": "11c03af960814b5bd2db834fce6b6d29f5ce54b5",
+      "id": "plugin-command:plugins/local/commands/hello.md",
+      "kind": "skill",
+      "name": "hello",
+      "name_source": "path",
+      "path": "plugins/local/commands/hello.md",
+      "plugin_id": "plugins/local",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "plugin-command",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "marketplace",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "compliant": 2,
+      "loadable": 1
+    },
+    "by_type": {
+      "agent-skill": 2,
+      "plugin-command": 1
+    },
+    "skills": 3
+  }
+}

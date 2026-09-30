@@ -1,0 +1,112 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "Plan.\n",
+      "body_bytes": 6,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "98be54dbf1c6ad0f0eb0066dc68432a651bb1d6e695f7d2696a216b2ffe06ef3",
+      "description": "Plans work",
+      "description_source": "frontmatter",
+      "detector": "D7",
+      "dir": null,
+      "extras": {},
+      "frontmatter": {
+        "description": "Plans work"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "description: Plans work",
+      "git_blob_sha": "e4c4881afcb803960691ec71f5995eef9b520333",
+      "id": "copilot-agent:.github/agents/planner.agent.md",
+      "kind": "agent",
+      "name": "planner",
+      "name_source": "path",
+      "path": ".github/agents/planner.agent.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".github",
+      "source_pointer": null,
+      "type": "copilot-agent",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "Review.\n",
+      "body_bytes": 8,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "72ebe9bbbd33be5c05c1a81f8c25c152278a79ef4a7cfdb68dcd48ca70016150",
+      "description": "Review code",
+      "description_source": "frontmatter",
+      "detector": "D5",
+      "dir": null,
+      "extras": {},
+      "frontmatter": {
+        "description": "Review code"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "description: Review code",
+      "git_blob_sha": "783a9f3aa459946731e35c5373f1a04f9cc104bf",
+      "id": "copilot-prompt:.github/prompts/review.prompt.md",
+      "kind": "skill",
+      "name": "review",
+      "name_source": "path",
+      "path": ".github/prompts/review.prompt.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".github",
+      "source_pointer": null,
+      "type": "copilot-prompt",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "d5_d7_copilot",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 1,
+    "by_compliance": {
+      "loadable": 2
+    },
+    "by_type": {
+      "copilot-agent": 1,
+      "copilot-prompt": 1
+    },
+    "skills": 1
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# outer\n\nSteps.\n",
+      "body_bytes": 16,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "36d488d12439c79003410b123d336f36ada709b4abb49bdfcf984dff9746272e",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/outer",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "outer"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: outer\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "96800b868f95bc33efae2154c7f7b5b218f5b224",
+      "id": "agent-skill:skills/outer/SKILL.md",
+      "kind": "skill",
+      "name": "outer",
+      "name_source": "frontmatter",
+      "path": "skills/outer/SKILL.md",
+      "plugin_id": null,
+      "resources": [
+        {
+          "bytes": 4,
+          "git_blob_sha": "6415016b862a5da5f9ede85d2b5e5623bb553db3",
+          "path": "skills/outer/ref.md"
+        }
+      ],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# inner\n\nSteps.\n",
+      "body_bytes": 16,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "2bc9a15e7309461e9d052bc3eb3290099180dd3c650852b5798aa7fb8e2ef30c",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "skills/outer/inner",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "inner"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: inner\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "0bca66c732c486f3d77f66882014dbf52f71ce89",
+      "id": "agent-skill:skills/outer/inner/SKILL.md",
+      "kind": "skill",
+      "name": "inner",
+      "name_source": "frontmatter",
+      "path": "skills/outer/inner/SKILL.md",
+      "plugin_id": null,
+      "resources": [
+        {
+          "bytes": 5,
+          "git_blob_sha": "1269488f7fb1f4b56a8c0e5eb48cecbfadfa9219",
+          "path": "skills/outer/inner/data.txt"
+        }
+      ],
+      "scope": "unscoped",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "nested",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "compliant": 2
+    },
+    "by_type": {
+      "agent-skill": 2
+    },
+    "skills": 2
+  }
+}

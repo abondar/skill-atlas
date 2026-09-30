@@ -1,0 +1,109 @@
+{
+  "plugins": [],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "Run deploy.\n",
+      "body_bytes": 12,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "43eb9534dc5f4d615a4ac0a66f3bc83e0fe6f1d1f79af74ca32e3e12c77ba63f",
+      "description": "Deploy the app",
+      "description_source": "frontmatter",
+      "detector": "D2",
+      "dir": null,
+      "extras": {},
+      "frontmatter": {
+        "description": "Deploy the app"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "description: Deploy the app",
+      "git_blob_sha": "53a408389263de64780a13cf19f85e15419bcf2b",
+      "id": "claude-command:.claude/commands/deploy.md",
+      "kind": "skill",
+      "name": "deploy",
+      "name_source": "path",
+      "path": ".claude/commands/deploy.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".claude",
+      "source_pointer": null,
+      "type": "claude-command",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "Commit staged changes\n",
+      "body_bytes": 22,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "5b87d9725ae95741376f33d3f864fbd35ca533b3ceabd9f63f6e1f0d78d60e89",
+      "description": "Commit staged changes",
+      "description_source": "body",
+      "detector": "D2",
+      "dir": null,
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": "137dc78cd113ae467dc6db2be4da96f00b96fe0d",
+      "id": "claude-command:.claude/commands/git/commit.md",
+      "kind": "skill",
+      "name": "git:commit",
+      "name_source": "path",
+      "path": ".claude/commands/git/commit.md",
+      "plugin_id": null,
+      "resources": [],
+      "scope": ".claude",
+      "source_pointer": null,
+      "type": "claude-command",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "d2_claude_command",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 0,
+    "by_compliance": {
+      "loadable": 2
+    },
+    "by_type": {
+      "claude-command": 2
+    },
+    "skills": 2
+  }
+}

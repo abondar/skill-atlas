@@ -1,0 +1,224 @@
+{
+  "plugins": [
+    {
+      "description": "Tooling",
+      "id": "plugins/tools",
+      "manifest_path": "plugins/tools/.claude-plugin/plugin.json",
+      "marketplace_path": null,
+      "name": "tools",
+      "remote_source": null,
+      "root": "plugins/tools",
+      "version": "1.0.0"
+    }
+  ],
+  "repo": null,
+  "scan": {
+    "detectors_version": 1,
+    "excluded_candidates": 0,
+    "fetch_method": "fs",
+    "options": {
+      "exclude": [],
+      "include": [],
+      "include_fixtures": false,
+      "path": null,
+      "ref": null
+    },
+    "tool_version": "0.1.0",
+    "warnings": []
+  },
+  "schema_version": 1,
+  "skills": [
+    {
+      "aliases": [],
+      "body": "# fmt\n\nSteps.\n",
+      "body_bytes": 14,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "40e9ee9d6936f9b2425977568303a92ff51cc3fad723203ab4e47b86c1d2063b",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "plugins/tools/extra/fmt",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "fmt"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: fmt\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "2c49da8af97ab6d65b2b6aa0fdecafe4b928c5c1",
+      "id": "agent-skill:plugins/tools/extra/fmt/SKILL.md",
+      "kind": "skill",
+      "name": "fmt",
+      "name_source": "frontmatter",
+      "path": "plugins/tools/extra/fmt/SKILL.md",
+      "plugin_id": "plugins/tools",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "# lint\n\nSteps.\n",
+      "body_bytes": 15,
+      "body_lines": 4,
+      "compliance": {
+        "status": "compliant",
+        "violations": []
+      },
+      "content_sha256": "2d45db5665c580d62c0b7893a03e615afec4a81e4ea2f547b75677915fe02dfd",
+      "description": "Does a thing. Use when needed.",
+      "description_source": "frontmatter",
+      "detector": "D1",
+      "dir": "plugins/tools/skills/lint",
+      "extras": {},
+      "frontmatter": {
+        "description": "Does a thing. Use when needed.",
+        "name": "lint"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: lint\ndescription: Does a thing. Use when needed.",
+      "git_blob_sha": "fd783ba6d0957437991be7a8ed5664601bf565f6",
+      "id": "agent-skill:plugins/tools/skills/lint/SKILL.md",
+      "kind": "skill",
+      "name": "lint",
+      "name_source": "frontmatter",
+      "path": "plugins/tools/skills/lint/SKILL.md",
+      "plugin_id": "plugins/tools",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "agent-skill",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "x\n",
+      "body_bytes": 2,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "ecc3b9e1b28e424b58d21b91d5f6dc9cb6322028925fc557f349e48e89be5c5a",
+      "description": "Reviews",
+      "description_source": "frontmatter",
+      "detector": "D6",
+      "dir": null,
+      "extras": {},
+      "frontmatter": {
+        "description": "Reviews",
+        "name": "reviewer"
+      },
+      "frontmatter_error": null,
+      "frontmatter_raw": "name: reviewer\ndescription: Reviews",
+      "git_blob_sha": "9e3fb1772eb1b1ffed1a9e1d658d42a1ffd82342",
+      "id": "claude-agent:plugins/tools/agents/reviewer.md",
+      "kind": "agent",
+      "name": "reviewer",
+      "name_source": "frontmatter",
+      "path": "plugins/tools/agents/reviewer.md",
+      "plugin_id": "plugins/tools",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "claude-agent",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "Explain the plugin.",
+      "body_bytes": 19,
+      "body_lines": 1,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "ac46a288e523505af93dfef5addab942dc8bb4bef46c898f8a678bf9b633e536",
+      "description": "About",
+      "description_source": "manifest",
+      "detector": "D4",
+      "dir": null,
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": null,
+      "id": "plugin-command-inline:plugins/tools/.claude-plugin/plugin.json#about",
+      "kind": "skill",
+      "name": "about",
+      "name_source": "manifest",
+      "path": null,
+      "plugin_id": "plugins/tools",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": "plugins/tools/.claude-plugin/plugin.json#/commands/about",
+      "type": "plugin-command-inline",
+      "warnings": []
+    },
+    {
+      "aliases": [],
+      "body": "Print the status.\n",
+      "body_bytes": 18,
+      "body_lines": 2,
+      "compliance": {
+        "status": "loadable",
+        "violations": []
+      },
+      "content_sha256": "1bd3b2515d28da29ecaf606627a382431b3a4558106b085379a6a10068ce8d63",
+      "description": "Show status",
+      "description_source": "manifest",
+      "detector": "D3",
+      "dir": null,
+      "extras": {},
+      "frontmatter": null,
+      "frontmatter_error": null,
+      "frontmatter_raw": null,
+      "git_blob_sha": "e01a016e64599e0d77b4e1a6ab2148a211b445e7",
+      "id": "plugin-command:plugins/tools/cmds/status.md",
+      "kind": "skill",
+      "name": "status",
+      "name_source": "manifest",
+      "path": "plugins/tools/cmds/status.md",
+      "plugin_id": "plugins/tools",
+      "resources": [],
+      "scope": "plugin",
+      "source_pointer": null,
+      "type": "plugin-command",
+      "warnings": []
+    }
+  ],
+  "source": {
+    "commit_date": null,
+    "commit_sha": null,
+    "dirty": null,
+    "host": null,
+    "kind": "local",
+    "name": "d3_d4_plugin",
+    "node_id": null,
+    "owner": null,
+    "remote_url": null,
+    "requested_ref": null,
+    "resolved_ref": null,
+    "url": null
+  },
+  "stats": {
+    "agents": 1,
+    "by_compliance": {
+      "compliant": 2,
+      "loadable": 3
+    },
+    "by_type": {
+      "agent-skill": 2,
+      "claude-agent": 1,
+      "plugin-command": 1,
+      "plugin-command-inline": 1
+    },
+    "skills": 4
+  }
+}
