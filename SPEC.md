@@ -583,7 +583,7 @@ GitLab и Bitbucket; скан организации или списка реп�
 
 ## 15. Статус реализации
 
-Этапы M0–M6 реализованы. Проверки: `ruff check`, `ruff format --check`, `mypy --strict`,  тестов `pytest` на Python 3.12 и 3.14.
+Этапы M0–M6 реализованы. Проверки: `ruff check`, `ruff format --check`, `mypy --strict`, 174 теста `pytest` на Python 3.12 и 3.14.
 
 Покрытие тестами:
 - детекторы D1–D7, плагины, маркетплейсы, symlink, compliance, исключения, битые файлы — golden-снапшоты по 13 фикстурам;
