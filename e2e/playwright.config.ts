@@ -24,9 +24,13 @@ export default defineConfig({
       caret: "hide",
       scale: "css",
       stylePath: "./screenshot.css",
-      // Anti-aliasing noise stays under this; a moved or restyled element does not.
+      // The pinned runner renders the same pixels every run, so the tolerance is tight.
+      // `threshold` is the per-pixel color distance. Measured: at Playwright's default 0.2,
+      // and at 0.05, a 16-18 unit change of the accent or muted text color passed; at 0.02
+      // it fails, while an invisible 6-unit change still passes. The pixel ratio absorbs
+      // stray anti-aliasing.
       maxDiffPixelRatio: 0.002,
-      threshold: 0.2,
+      threshold: 0.02,
     },
   },
   use: {
