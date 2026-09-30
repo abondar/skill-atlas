@@ -45,7 +45,7 @@ outside the change (for example, a runner outage), say so and give the run URL.
   run `npx playwright test` in `e2e/` and update the specs. Screenshots are compared only in
   the CI `e2e` job. For an intended visual change, run the CI workflow manually with
   `update_screenshots`, put the `playwright-baselines` artifact into
-  `e2e/tests/__screenshots__/` and review every changed PNG before the commit. Mark new values that differ between runs (times,
-  durations, absolute paths) with `data-volatile` in `app.js`.
+  `e2e/tests/__screenshots__/` and review every changed PNG before the commit. A value that differs between runs (a time, a duration, a
+  path) breaks the screenshots: pin it in `e2e/server.py` or `e2e/fixtures.ts`.
 - Snapshots are immutable. Never rewrite a file in the store.
 - Tests must not use the network. GitHub tests use `respx` fakes (`tests/test_github.py`).

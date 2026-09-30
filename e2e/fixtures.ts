@@ -62,10 +62,11 @@ export async function login(page: Page, atlas: Atlas): Promise<void> {
   await expect(page).toHaveURL(`${atlas.url}/`); // the token moved into a cookie
 }
 
-// A screenshot compared with its baseline. Values that differ between runs are masked;
-// server.py and the fixed browser clock already pin most of them.
+// A screenshot compared with its baseline. Nothing is masked: server.py and the fixed
+// browser clock pin every value that would differ between runs, and a mask would also hide
+// whatever overlaps it (the skill panel). A new unpinned value fails the comparison.
 export async function shot(page: Page, name: string, options: { fullPage?: boolean } = {}): Promise<void> {
   await page.mouse.move(0, 0); // no hover state from the last click
   await page.evaluate(() => document.fonts.ready);
-  await expect(page).toHaveScreenshot(`${name}.png`, { mask: [page.locator("[data-volatile]")], ...options });
+  await expect(page).toHaveScreenshot(`${name}.png`, options);
 }

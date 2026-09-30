@@ -1,9 +1,6 @@
 "use strict";
 // skill-atlas web UI.
 //
-// `data-volatile` marks values that differ between runs of the same scan (times, durations,
-// absolute paths, scan IDs). Visual regression tests mask them (e2e/).
-//
 // Safety: every string from the server goes into the DOM as text (textContent or
 // attribute values). The one exception is `body_html`, which the server renders
 // from Markdown with raw HTML disabled; the page CSP forbids inline scripts on top.
@@ -437,7 +434,7 @@ function repoCard(r) {
       h("span", { class: "item" }, icon("sparkles"), plural(r.latest.skills, "skill")),
       r.latest.agents ? h("span", { class: "item" }, icon("bot"), plural(r.latest.agents, "agent")) : null,
       meta.stars !== null && meta.stars !== undefined ? h("span", { class: "item" }, icon("star"), num(meta.stars)) : null,
-      h("span", { class: "item", title: when(r.latest.scanned_at), "data-volatile": true }, icon("clock"), ago(r.latest.scanned_at)),
+      h("span", { class: "item", title: when(r.latest.scanned_at) }, icon("clock"), ago(r.latest.scanned_at)),
     ),
   );
 }
@@ -519,7 +516,6 @@ async function renderRepo(id, params, token) {
           {
             class: "select",
             "aria-label": "Snapshot",
-            "data-volatile": true,
             onchange: (e) => {
               location.hash = href("repo", repo.id, { snap: e.target.value === repo.latest.file ? null : e.target.value });
             },
@@ -538,12 +534,12 @@ async function renderRepo(id, params, token) {
       "div",
       { class: "info" },
       h("h1", {}, h("span", { class: "owner" }, `${owner} / `), name),
-      h("p", { "data-volatile": !meta.description && src.kind === "local" }, meta.description || (src.kind === "local" ? src.local_path : "No description.")),
+      h("p", {}, meta.description || (src.kind === "local" ? src.local_path : "No description.")),
       h(
         "div",
         { class: "meta" },
         src.commit_sha ? h("span", { class: "item mono", title: src.commit_sha }, icon("commit"), `${sha8(src.commit_sha)}${src.resolved_ref ? " on " + src.resolved_ref : ""}${src.dirty ? " · uncommitted changes" : ""}`) : null,
-        h("span", { class: "item", title: when(entry.scanned_at), "data-volatile": true }, icon("clock"), `Scanned ${ago(snap.scan.scanned_at)}`),
+        h("span", { class: "item", title: when(entry.scanned_at) }, icon("clock"), `Scanned ${ago(snap.scan.scanned_at)}`),
         meta.license ? h("span", { class: "item" }, icon("scale"), meta.license) : null,
         meta.stars !== undefined && meta.stars !== null ? h("span", { class: "item" }, icon("star"), num(meta.stars)) : null,
         src.url ? h("a", { class: "item", href: src.url, target: "_blank", rel: "noopener noreferrer" }, icon("external"), "View on GitHub") : null,
@@ -566,7 +562,7 @@ async function renderRepo(id, params, token) {
         "div",
         { class: "callout notice" },
         icon("history"),
-        h("div", { "data-volatile": true }, `You are viewing an older snapshot from ${when(entry.scanned_at)}. `, h("a", { href: href("repo", repo.id) }, "Go to the latest")),
+        h("div", {}, `You are viewing an older snapshot from ${when(entry.scanned_at)}. `, h("a", { href: href("repo", repo.id) }, "Go to the latest")),
       );
 
   const tab = ["skills", "scan", "history"].includes(params.get("tab")) ? params.get("tab") : "skills";
@@ -749,9 +745,8 @@ function scanDetails(snap, file) {
   const scan = snap.scan;
   const src = snap.source;
   const o = scan.options;
-  const volatile = new Set(["Scanned", "Duration", "Scan ID", "Snapshot file", "Location", "Commit date"]);
   const props = (pairs) =>
-    h("dl", { class: "props" }, pairs.filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => [h("dt", {}, k), h("dd", { "data-volatile": volatile.has(k) }, String(v))]));
+    h("dl", { class: "props" }, pairs.filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => [h("dt", {}, k), h("dd", {}, String(v))]));
   const panel = (title, content) => h("div", { class: "panel" }, h("div", { class: "panel-head" }, title), h("div", { class: "panel-body" }, content));
   return h(
     "div",
@@ -814,7 +809,7 @@ function historyView(repo, file) {
         return h(
           "li",
           { class: x.file === file ? "current" : null },
-          h("span", { class: "when", "data-volatile": true }, when(x.scanned_at)),
+          h("span", { class: "when" }, when(x.scanned_at)),
           h("span", { class: "mono muted" }, sha8(x.commit_sha) || "no commit", x.dirty ? " · dirty" : ""),
           h("span", {}, plural(x.skills, "skill")),
           delta ? h("span", { class: `delta ${delta > 0 ? "up" : "down"}` }, `${delta > 0 ? "+" : ""}${delta}`) : null,
@@ -1317,10 +1312,10 @@ const scanDialog = (() => {
   }
 
   function renderProgress() {
-    const steps = job.stages.map(([name, secs]) => h("li", {}, h("span", { class: "done" }, icon("check")), name, h("span", { class: "time", "data-volatile": true }, `${secs.toFixed(1)} s`)));
+    const steps = job.stages.map(([name, secs]) => h("li", {}, h("span", { class: "done" }, icon("check")), name, h("span", { class: "time" }, `${secs.toFixed(1)} s`)));
     if (job.state === "running") {
       const [stage, ...rest] = job.status.split(" · ");
-      steps.push(h("li", { class: "current" }, h("span", { class: "spinner" }), h("span", {}, stage, rest.length ? h("span", { class: "detail" }, ` · ${rest.join(" · ")}`) : null), h("span", { class: "time", "data-volatile": true }, `${job.elapsed.toFixed(1)} s`)));
+      steps.push(h("li", { class: "current" }, h("span", { class: "spinner" }), h("span", {}, stage, rest.length ? h("span", { class: "detail" }, ` · ${rest.join(" · ")}`) : null), h("span", { class: "time" }, `${job.elapsed.toFixed(1)} s`)));
     }
     content.replaceChildren(
       h("div", { class: "target-line" }, job.target),

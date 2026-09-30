@@ -37,8 +37,9 @@ Values that change between runs are pinned, not ignored:
 - `fixtures.ts` pins the browser clock, so relative times read "2 hours ago";
 - the fixture root is a fixed path per test, so paths in the UI are stable.
 
-Elements marked `data-volatile` in `app.js` (times, durations, absolute paths, scan IDs)
-are masked as a second line of defense. `screenshot.css` hides toasts.
+Nothing is masked: a mask also hides whatever overlaps it, such as the skill panel. A new
+value that differs between runs fails the comparison; pin it in `server.py` or
+`fixtures.ts`. `screenshot.css` hides toasts, which expire on a timer.
 
 ## After an intended UI change
 
