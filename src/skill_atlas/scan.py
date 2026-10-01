@@ -35,7 +35,7 @@ from skill_atlas.sources.github import (
     find_token,
     tree_entries,
 )
-from skill_atlas.target import GitHubTarget, LocalTarget, parse_target
+from skill_atlas.target import GitHubTarget, LocalTarget, OrgTarget, parse_target
 
 MAX_REF_SPLIT_ATTEMPTS = 5
 
@@ -205,12 +205,16 @@ def prepare_github(
     target: GitHubTarget,
     client: GitHubClient | None = None,
     progress: Progress | None = None,
+    repo: dict[str, Any] | None = None,
 ) -> _Prepared:
+    """Resolve identity and ref. `repo` is the metadata from an organization listing:
+    it has every field of `GET /repos/{o}/{r}` used here, so that request is skipped."""
     progress = progress or NullProgress()
     if client is None:
         client = GitHubClient(target.host, find_token(target.host))
-    progress.stage(f"fetching {target.host}/{target.owner}/{target.name} metadata")
-    repo = client.repo(target.owner, target.name)
+    if repo is None:
+        progress.stage(f"fetching {target.host}/{target.owner}/{target.name} metadata")
+        repo = client.repo(target.owner, target.name)
     full_name = str(repo.get("full_name") or f"{target.owner}/{target.name}")
     owner, name = full_name.split("/", 1)
     target = GitHubTarget(target.host, owner, name, target.tree_segments)
@@ -298,6 +302,11 @@ def _run_scan(
     started = time.monotonic()
     target = parse_target(req.target, req.host)
     notices: list[str] = []
+    if isinstance(target, OrgTarget):
+        raise UsageError(
+            f"{req.target!r} is an organization or user, not a repository; "
+            f"`skill-atlas scan --org {target.owner}` scans all its repositories"
+        )
     if isinstance(target, LocalTarget):
         if target.looks_remote:
             notices.append(
@@ -308,7 +317,20 @@ def _run_scan(
         prepared = prepare_local(req, target)
     else:
         prepared = prepare_github(req, target, client, progress)
+    return complete_scan(prepared, req, store_dir, save, progress, started, notices)
 
+
+def complete_scan(
+    prepared: _Prepared,
+    req: ScanRequest,
+    store_dir: Path | None,
+    save: bool,
+    progress: Progress,
+    started: float,
+    notices: list[str] | None = None,
+) -> ScanOutcome:
+    """Cache check, tree, detection and saving for a prepared target."""
+    notices = notices or []
     src = prepared.source
     if store_dir is not None and not req.force and src.commit_sha and not src.dirty:
         cached = store.find_cached(

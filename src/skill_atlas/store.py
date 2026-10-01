@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from skill_atlas import SCHEMA_VERSION
 from skill_atlas.errors import StoreError
-from skill_atlas.model import ScanOptions, Snapshot
+from skill_atlas.model import OrgScan, ScanOptions, Snapshot
 
 _SLUG_BAD = re.compile(r"[^a-z0-9.-]+")
 
@@ -148,3 +148,52 @@ def find_cached(
         ):
             return Loaded(path, snap)
     return None
+
+
+# --- organization scan reports (SPEC section 7.5) -------------------------------------
+
+
+def orgs_dir(scans: Path) -> Path:
+    """Reports live next to the snapshot directory, not in it: aggregation reads only
+    snapshots."""
+    return scans.parent / "orgs"
+
+
+def save_org(report: OrgScan, directory: Path) -> Path:
+    stamp = report.started_at.replace("-", "").replace(":", "")
+    data = report.model_dump(mode="json")
+    content = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    return write_new(directory / f"{stamp}_{slug(report.owner_key)}.json", content)
+
+
+def load_org(path: Path) -> OrgScan:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StoreError(f"cannot read organization scan {path}: {exc}") from None
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise StoreError(f"{path}: unsupported organization scan")
+    try:
+        return OrgScan.model_validate(data)
+    except ValidationError as exc:
+        raise StoreError(
+            f"{path}: invalid organization scan: {exc.error_count()} validation errors"
+        ) from None
+
+
+def latest_orgs(directory: Path, warnings: list[str] | None = None) -> dict[str, OrgScan]:
+    """The latest report per `owner_key`. File names sort by start time."""
+    out: dict[str, OrgScan] = {}
+    if not directory.is_dir():
+        return out
+    for path in sorted(directory.glob("*.json")):
+        try:
+            report = load_org(path)
+        except StoreError as exc:
+            if warnings is not None:
+                warnings.append(f"skipped: {exc}")
+            continue
+        previous = out.get(report.owner_key)
+        if previous is None or report.started_at >= previous.started_at:
+            out[report.owner_key] = report
+    return out

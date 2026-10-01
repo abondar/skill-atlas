@@ -323,21 +323,28 @@ async function renderHome(params, token) {
   const data = await loadRepos();
   if (token !== renderToken) return;
   const repos = data.repos;
+  const orgs = data.orgs || {};
   document.title = "skill-atlas";
 
-  if (!repos.length) {
+  if (!repos.length && !Object.keys(orgs).length) {
     setMain(
       emptyState(
         "layers",
         "No repositories yet",
-        "Scan a GitHub repository or a local path to build your skill atlas.",
+        "Scan a GitHub repository, an organization or a local path to build your skill atlas.",
         h("button", { class: "btn primary", onclick: () => scanDialog.open() }, icon("plus"), "Scan your first repository"),
       ),
     );
     return;
   }
 
-  const totals = repos.reduce(
+  // Owners: organizations and users from repository keys and organization scans.
+  const owners = [...new Set([...repos.map((r) => r.owner_key), ...Object.keys(orgs)])].sort();
+  const owner = owners.includes(params.get("owner")) ? params.get("owner") : "";
+  const scope = owner ? repos.filter((r) => r.owner_key === owner) : repos;
+  const withoutSkills = scope.filter((r) => !r.total).length;
+
+  const totals = scope.reduce(
     (t, r) => {
       for (const [cat, n] of Object.entries(r.by_category)) {
         if (AUXILIARY.has(cat)) t.aux += n;
@@ -367,19 +374,51 @@ async function renderHome(params, token) {
       h("option", { value: v, selected: (params.get("sort") || "recent") === v }, label),
     ),
   );
+  // Shown only when there is a choice: a store of local scans keeps the plain toolbar.
+  const ownerSelect =
+    owners.length > 1 || Object.keys(orgs).length
+      ? h(
+          "select",
+          { class: "select", "aria-label": "Owner", onchange: (e) => { setParams({ owner: e.target.value }); render(); } },
+          h("option", { value: "" }, "All owners"),
+          owners.map((k) => h("option", { value: k, selected: k === owner }, k)),
+        )
+      : null;
+  const emptyToggle = withoutSkills
+    ? h(
+        "label",
+        { class: "switch" },
+        h("input", {
+          type: "checkbox",
+          checked: params.get("empty") === "1",
+          "aria-label": "Show repositories without skills",
+          onchange: (e) => {
+            setParams({ empty: e.target.checked ? "1" : null });
+            updateGrid();
+          },
+        }),
+        `Without skills (${num(withoutSkills)})`,
+      )
+    : null;
   const grid = h("div", { class: "grid" });
   const resultLine = h("div", { class: "result-line" });
 
   function updateGrid() {
     const p = route().params;
     const q = (p.get("q") || "").toLowerCase();
-    let rows = repos.filter((r) => `${r.repo_key} ${r.description || ""}`.toLowerCase().includes(q));
+    const showEmpty = p.get("empty") === "1";
+    let rows = scope.filter((r) => `${r.repo_key} ${r.description || ""}`.toLowerCase().includes(q));
+    const hidden = showEmpty ? 0 : rows.filter((r) => !r.total).length;
+    if (!showEmpty) rows = rows.filter((r) => r.total);
     const by = p.get("sort") || "recent";
     if (by === "skills") rows = [...rows].sort((a, b) => b.latest.skills - a.latest.skills);
     if (by === "name") rows = [...rows].sort((a, b) => a.repo_key.localeCompare(b.repo_key));
-    resultLine.textContent = q ? `${plural(rows.length, "repository", "repositories")} match` : "";
+    const parts = [];
+    if (q) parts.push(`${plural(rows.length, "repository", "repositories")} match`);
+    if (hidden) parts.push(`${plural(hidden, "repository", "repositories")} without skills hidden`);
+    resultLine.textContent = parts.join(" · ");
     grid.replaceChildren(...rows.map(repoCard));
-    if (!rows.length) grid.replaceChildren(emptyState("search", "No matches", "Try another name."));
+    if (!rows.length) grid.replaceChildren(emptyState("search", "No matches", hidden ? "No skills found here. Switch on “Without skills” to see every repository." : "Try another name."));
   }
 
   setMain(
@@ -388,19 +427,70 @@ async function renderHome(params, token) {
       { class: "page-head" },
       h("div", {}, h("h1", {}, "Repositories"), h("div", { class: "sub" }, `Snapshots in ${data.store}`)),
     ),
+    owner && orgs[owner] ? orgPanel(orgs[owner]) : null,
     h(
       "div",
       { class: "stats" },
-      stat("layers", "Repositories", num(repos.length), `${num(repos.reduce((a, r) => a + r.scans, 0))} scans`),
+      stat("layers", "Repositories", num(scope.length), `${num(scope.reduce((a, r) => a + r.scans, 0))} scans`),
       stat("sparkles", "Skills", num(totals.skills), totals.aux ? `${num(totals.aux)} test, example or docs` : "latest scans"),
       stat("bot", "Agents", num(totals.agents), "subagent definitions"),
       stat("plug", "External plugins", num(totals.external), "listed, not scanned"),
     ),
-    h("div", { class: "toolbar" }, h("label", { class: "field" }, icon("search"), search, h("kbd", {}, "/")), h("span", { class: "spacer" }), sort),
+    h("div", { class: "toolbar" }, h("label", { class: "field" }, icon("search"), search, h("kbd", {}, "/")), ownerSelect, emptyToggle, h("span", { class: "spacer" }), sort),
     resultLine,
     grid,
   );
   updateGrid();
+}
+
+const ORG_STATUS = {
+  complete: ["ok", "Complete"],
+  partial: ["warn", "Some repositories failed"],
+  stopped: ["bad", "Stopped"],
+  interrupted: ["warn", "Interrupted"],
+};
+const ORG_COUNT_LABEL = { scanned: "new snapshots", unchanged: "unchanged", empty: "empty", failed: "failed", pending: "not scanned yet" };
+
+function orgCounts(o) {
+  const skipped = Object.entries(o.skipped || {}).map(([k, n]) => `${num(n)} ${k === "name" ? "by name" : k === "fork" ? "forks" : k}`);
+  const items = [
+    ["Listed", num(o.listed), skipped.length ? `skipped: ${skipped.join(", ")}` : "no filters applied"],
+    ["Scanned", num(o.selected), Object.entries(o.counts).map(([k, n]) => `${num(n)} ${ORG_COUNT_LABEL[k] || k}`).join(", ") || "nothing to scan"],
+    ["With skills", num(o.with_skills), "repositories with skills or agents"],
+  ];
+  return h("dl", { class: "org-counts" }, items.map(([label, value, hint]) => h("div", {}, h("dt", {}, label), h("dd", {}, value), h("div", { class: "hint" }, hint))));
+}
+
+function orgPanel(o) {
+  const [cls, label] = ORG_STATUS[o.status] || ["", o.status];
+  const host = o.owner_key.split("/")[0];
+  return h(
+    "section",
+    { class: "panel org-panel", "aria-label": "Organization scan" },
+    h(
+      "div",
+      { class: "panel-head org-head" },
+      h("div", { class: "grow" }, `${o.owner_type === "organization" ? "Organization" : "User"} ${o.owner}`, h("div", { class: "sub" }, `Scanned ${ago(o.finished_at)} · ${num(o.api_requests)} API requests`)),
+      h("span", { class: `badge ${cls}` }, label),
+      h("button", { class: "btn sm", onclick: () => scanDialog.open(`https://${host}/${o.owner}`, true) }, icon("refresh"), "Rescan organization"),
+    ),
+    h(
+      "div",
+      { class: "panel-body" },
+      orgCounts(o),
+      o.message ? h("div", { class: "callout warn" }, icon("alert"), h("div", {}, o.message)) : null,
+      o.failures.length ? orgFailures(o.failures) : null,
+    ),
+  );
+}
+
+function orgFailures(failures) {
+  return h(
+    "details",
+    { class: "org-failures", open: failures.length <= 5 },
+    h("summary", {}, `Failed (${num(failures.length)})`),
+    h("ul", {}, failures.map((f) => h("li", {}, h("span", { class: "mono" }, f.full_name), h("span", { class: "error" }, f.error)))),
+  );
 }
 
 function stat(ic, label, value, hint) {
@@ -1298,8 +1388,8 @@ const scanDialog = (() => {
           },
         },
         h("label", { class: "field big" }, icon("search"), input),
-        h("p", { class: "hint" }, "The scan saves a snapshot and reuses it when the commit has not changed."),
-        h("div", { class: "examples" }, example("anthropics/skills"), example("https://github.com/JetBrains/koog")),
+        h("p", { class: "hint" }, "The scan saves a snapshot and reuses it when the commit has not changed. An organization or user URL scans all its repositories."),
+        h("div", { class: "examples" }, example("anthropics/skills"), example("https://github.com/JetBrains/koog"), example("https://github.com/anthropics")),
         error ? h("div", { class: "callout bad" }, icon("alert"), h("div", {}, error)) : null,
         h(
           "div",
@@ -1312,6 +1402,10 @@ const scanDialog = (() => {
   }
 
   function renderProgress() {
+    if (job.kind === "org") {
+      renderOrgProgress();
+      return;
+    }
     const steps = job.stages.map(([name, secs]) => h("li", {}, h("span", { class: "done" }, icon("check")), name, h("span", { class: "time" }, `${secs.toFixed(1)} s`)));
     if (job.state === "running") {
       const [stage, ...rest] = job.status.split(" · ");
@@ -1326,6 +1420,44 @@ const scanDialog = (() => {
         h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Run in background"),
       ),
     );
+  }
+
+  function renderOrgProgress() {
+    const o = job.org || { phase: "listing", listed: 0, total: 0, done: 0, counts: {}, with_skills: 0, active: [], failures: [] };
+    const listing = o.phase === "listing";
+    const bar = h("div", { class: "progress", role: "progressbar", "aria-label": "Repositories scanned", "aria-valuemin": "0", "aria-valuemax": String(o.total), "aria-valuenow": String(o.done) }, h("span", {}));
+    bar.firstChild.style.width = o.total ? `${(100 * o.done) / o.total}%` : "0%"; // CSSOM, allowed by the CSP
+    const counts = Object.entries(o.counts).map(([k, n]) => `${num(n)} ${ORG_COUNT_LABEL[k] || k}`);
+    content.replaceChildren(
+      h("div", { class: "target-line" }, job.target),
+      h(
+        "div",
+        { class: "org-progress" },
+        h("div", { class: "org-line" }, h("span", { class: "spinner" }), listing ? `Listing repositories · ${num(o.listed)}` : `${num(o.done)} of ${plural(o.total, "repository", "repositories")}`, h("span", { class: "time" }, `${job.elapsed.toFixed(0)} s`)),
+        listing ? null : bar,
+        listing ? null : h("div", { class: "hint" }, [`${num(o.with_skills)} with skills`, ...counts, o.rate_remaining !== null && o.rate_remaining !== undefined ? `API quota left ${num(o.rate_remaining)}` : null].filter(Boolean).join(" · ")),
+        o.wait_seconds ? h("div", { class: "callout warn" }, icon("clock"), h("div", {}, `GitHub rate limit: waiting ${Math.ceil(o.wait_seconds / 60)} min before the next request.`)) : null,
+        o.active.length && !o.wait_seconds ? h("div", { class: "org-active" }, "Scanning ", o.active.map((a, i) => [i ? ", " : "", h("span", { class: "mono" }, a)])) : null,
+        o.failures.length ? orgFailures(o.failures) : null,
+        job.cancelling ? h("div", { class: "callout" }, icon("info"), h("div", {}, "Stopping after the repositories in progress. Saved snapshots are kept; scan again to continue.")) : null,
+      ),
+      h(
+        "div",
+        { class: "modal-foot" },
+        h("button", { class: "btn", type: "button", disabled: job.cancelling, onclick: () => stop() }, "Stop"),
+        h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Run in background"),
+      ),
+    );
+  }
+
+  async function stop() {
+    try {
+      job = await api(`/api/scan/${job.id}/cancel`, { method: "POST", headers: { "Content-Type": "application/json", "X-Skill-Atlas": "1" }, body: "{}" });
+    } catch (e) {
+      toast(`Cannot stop the scan: ${e.message}`, "bad");
+      return;
+    }
+    renderProgress();
   }
 
   async function start(target) {
@@ -1379,6 +1511,14 @@ const scanDialog = (() => {
     invalidate();
     cache.snapshots.delete(done.file);
     dialog.close();
+    if (done.kind === "org") {
+      const o = done.summary;
+      const failed = o.failures.length ? `, ${num(o.failures.length)} failed` : "";
+      toast(`${o.owner}: ${plural(o.selected, "repository", "repositories")} scanned, ${num(o.with_skills)} with skills${failed}`, o.status === "complete" ? "ok" : "bad");
+      await loadRepos(true);
+      go(href("home", null, { owner: o.owner_key }));
+      return;
+    }
     const repos = await loadRepos(true);
     const repo = repos.repos.find((r) => r.latest.file === done.file) || repos.repos.find((r) => r.repo_key === done.repo_key);
     const { owner, name } = repoName(repo?.source, done.repo_key);
@@ -1390,7 +1530,10 @@ const scanDialog = (() => {
   function updatePill() {
     const running = Boolean(job);
     shell.pill.hidden = !running || dialog.open;
-    if (running) shell.pill.replaceChildren(h("span", { class: "spinner" }), `Scanning ${job.target} · ${job.elapsed.toFixed(0)} s`);
+    if (!running) return;
+    const o = job.kind === "org" ? job.org : null;
+    const what = o && o.phase !== "listing" ? `${job.target} · ${num(o.done)}/${num(o.total)}` : job.target;
+    shell.pill.replaceChildren(h("span", { class: "spinner" }), `Scanning ${what} · ${job.elapsed.toFixed(0)} s`);
   }
 
   return {

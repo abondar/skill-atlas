@@ -6,10 +6,11 @@
   compares it with the baseline in `tests/__screenshots__/`, to catch UI drift between
   versions.
 - `tests/ui.spec.ts` — functional checks of filters, the skill panel, copies, the Skills
-  page, rescans and scan errors.
+  page, rescans, scan errors and an organization scan.
 
 Every test starts its own server over a fixture store (`server.py`) and fails on a console
-error, an uncaught exception or a CSP violation. `journey.spec.ts` bypasses the CSP:
+error, an uncaught exception or a CSP violation. The server fakes GitHub in process
+(`FakeGitHub` in `server.py`, the organization `acme`), so no test touches the network. `journey.spec.ts` bypasses the CSP:
 Playwright injects inline styles to take screenshots, and the CSP blocks them. The CSP is
 checked by `ui.spec.ts`, which takes no screenshots.
 

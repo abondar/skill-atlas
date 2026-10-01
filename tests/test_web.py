@@ -4,6 +4,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -263,3 +264,67 @@ def test_crossrepo_and_families(client: httpx.Client, tmp_path: Path) -> None:
     assert len(rows) == 2 and rows[0]["family"] == rows[1]["family"]
     assert rows[0]["family_name"] == "bump"
     assert client.get("/api/crossrepo", params={"file": name, "id": "x"}).status_code == 404
+
+
+def test_org_scan_job_progress_cancel_and_summary(tmp_path: Path) -> None:
+    import respx
+
+    from tests.github_fakes import FakeOrg, populate
+    from tests.github_fakes import client as gh_client
+
+    fake = FakeOrg()
+    populate(fake, 6, with_skills=2)
+    fake.broken.add("repo-005")
+    scans = tmp_path / "org-store" / "scans"
+    srv = Server(("127.0.0.1", 0), WebApp(scans, token="t", github=lambda host: gh_client()))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    headers = {"X-Skill-Atlas": "1"}
+    try:
+        with respx.mock(assert_all_called=False) as router:
+            router.route(host="127.0.0.1").pass_through()
+            fake.install(router)
+            with httpx.Client(base_url=base(srv), follow_redirects=True) as c:
+                c.get("/?token=t")
+                r = c.post("/api/scan", json={"target": "https://github.com/acme"}, headers=headers)
+                assert r.status_code == 202
+                assert (r.json()["kind"], r.json()["owner_key"]) == ("org", "github.com/acme")
+                job = wait(c, r.json()["id"])
+                assert job["state"] == "done", job
+                summary: Any = job["summary"]
+                assert (summary["status"], summary["selected"], summary["with_skills"]) == (
+                    "partial",
+                    6,
+                    2,
+                )
+                assert summary["failures"][0]["full_name"] == "Acme/repo-005"
+                org: Any = job["org"]
+                assert (org["phase"], org["done"], org["total"]) == ("done", 6, 6)
+
+                data = c.get("/api/repos").json()
+                assert {r["owner_key"] for r in data["repos"]} == {"github.com/acme"}
+                assert len(data["repos"]) == 5
+                assert data["orgs"]["github.com/acme"]["counts"] == {"scanned": 5, "failed": 1}
+
+                # Stop: the running repositories (4 workers) finish, the others stay pending.
+                fake.broken.clear()
+                fake.delay = 0.3
+                for name in list(fake.repos):
+                    fake.push(name, {"a.md": "a"})
+                r = c.post("/api/scan", json={"target": "https://github.com/acme"}, headers=headers)
+                job_id = r.json()["id"]
+                deadline = time.monotonic() + 10
+                while (c.get(f"/api/scan/{job_id}").json()["org"] or {}).get("phase") != "scanning":
+                    assert time.monotonic() < deadline
+                    time.sleep(0.02)
+                cancel = c.post(f"/api/scan/{job_id}/cancel", json={}, headers=headers)
+                assert cancel.status_code == 202 and cancel.json()["cancelling"]
+                job = wait(c, job_id)
+                assert job["state"] == "done", job
+                summary = job["summary"]
+                assert summary["status"] == "interrupted"
+                assert summary["counts"].get("pending", 0) >= 2
+                assert "Run the same scan again" in summary["message"]
+                assert c.post("/api/scan/nope/cancel", json={}, headers=headers).status_code == 404
+    finally:
+        srv.shutdown()
+        srv.server_close()

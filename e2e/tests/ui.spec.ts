@@ -138,6 +138,50 @@ test("scan from the UI, compare across repositories, rescan and errors", async (
   await page.keyboard.press("Escape");
 });
 
+test("organization scan: summary, failures, owner filter, repositories without skills", async ({ page, atlas }) => {
+  await login(page, atlas);
+  await expect(page.getByRole("combobox", { name: "Owner" })).toHaveCount(0); // one owner: no filter
+  const dialog = page.locator("dialog[open]");
+  await page.locator(".topbar .btn", { hasText: "Scan repository" }).click();
+  await dialog.locator('input[name="target"]').fill("https://github.com/acme");
+  await dialog.locator('button[type="submit"]').click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+  await expect(page.locator(".toast", { hasText: "acme: 5 repositories scanned, 2 with skills, 1 failed" })).toBeVisible();
+
+  // The home page opens filtered by the organization, with its latest scan on top.
+  expect(await page.evaluate(() => location.hash)).toContain("owner=github.com%2Facme");
+  const panel = page.locator(".org-panel");
+  await expect(panel).toContainText("Organization acme");
+  await expect(panel.locator(".badge")).toHaveText("Some repositories failed");
+  await expect(panel).toContainText("skipped: 1 archived");
+  await expect(panel).toContainText("4 new snapshots, 1 failed");
+  await expect(panel.locator("details.org-failures")).toContainText("acme/flaky-service");
+  await expect(panel.locator("details.org-failures")).toContainText("HTTP 500");
+  await expect(page.locator(".stats")).toContainText("Repositories4");
+
+  // Repositories without skills are hidden until asked for.
+  const repoCards = page.locator("a.card");
+  await expect(repoCards).toHaveCount(2);
+  await expect(page.locator(".result-line")).toContainText("2 repositories without skills hidden");
+  await page.getByRole("checkbox", { name: "Show repositories without skills" }).check();
+  await expect(repoCards).toHaveCount(4);
+  await expect(repoCards.filter({ hasText: "docs-site" })).toContainText("0 skills");
+
+  await page.getByRole("combobox", { name: "Owner" }).selectOption({ label: "All owners" });
+  await expect(panel).toHaveCount(0);
+  await expect(repoCards).toHaveCount(6);
+  await page.getByRole("combobox", { name: "Owner" }).selectOption({ label: "github.com/acme" });
+  await expect(panel).toBeVisible();
+
+  // A rescan reuses every unchanged snapshot; the broken repository fails again.
+  await panel.getByRole("button", { name: "Rescan organization" }).click();
+  await expect(page.locator(".toast", { hasText: "acme: 5 repositories scanned" }).last()).toBeVisible({ timeout: 30_000 });
+  await expect(panel).toContainText("4 unchanged, 1 failed");
+  await repoCards.filter({ hasText: "agents-kit" }).click();
+  await expect(page.locator(".repo-head h1")).toContainText("agents-kit");
+  await expect(page.locator(".grid")).toContainText("triage");
+});
+
 test("phone width: no horizontal scroll", async ({ page, atlas }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, atlas);

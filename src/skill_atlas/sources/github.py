@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import datetime as dt
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -18,7 +21,14 @@ from urllib.parse import quote
 import httpx
 
 from skill_atlas import __version__
-from skill_atlas.errors import AccessError, AtlasError, NetworkError, RateLimitError
+from skill_atlas.errors import (
+    AccessError,
+    AtlasError,
+    Interrupted,
+    NetworkError,
+    RateLimitError,
+    TokenError,
+)
 from skill_atlas.progress import Progress
 from skill_atlas.sources.base import EntryKind, TreeEntry
 from skill_atlas.sources.git import git, ls_tree
@@ -26,6 +36,12 @@ from skill_atlas.sources.indexed import IndexedTreeSource
 
 RETRIES = 3
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+# Waits on rate limits, when enabled (organization scans, SPEC section 3.4).
+RATE_LIMIT_WAITS = 3  # per request
+MAX_SECONDARY_WAIT = 300.0
+MAX_PRIMARY_WAIT = 3660.0  # the primary limit resets within an hour
+SECONDARY_DEFAULT_WAIT = 60.0  # GitHub: wait at least a minute when no retry-after is given
+PAGE_SIZE = 100
 
 
 def find_token(host: str) -> str | None:
@@ -52,19 +68,46 @@ class NotFound(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class RateLimit:
+    """The REST API quota from the latest response headers."""
+
+    limit: int
+    remaining: int
+    reset_at: float  # epoch seconds
+
+
 class GitHubClient:
+    """REST client. Thread-safe: an organization scan shares one client between workers.
+
+    By default a rate limit raises RateLimitError at once (SPEC section 4.1). An
+    organization scan sets `wait_secondary` and, with `--wait`, `wait_primary`.
+    """
+
     def __init__(
         self,
         host: str,
         token: str | None,
         http: httpx.Client | None = None,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], object] | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.host = host
         self.token = token
         self.api = "https://api.github.com" if host == "github.com" else f"https://{host}/api/v3"
         self._http = http or httpx.Client(timeout=TIMEOUT, follow_redirects=True)
-        self._sleep = sleep
+        # Set to stop: waits end at once and raise Interrupted. An organization scan puts
+        # its cancel event here, so Stop also cuts a rate-limit wait short.
+        self.interrupted = threading.Event()
+        self._sleep = sleep  # None: wait on `interrupted`
+        self._clock = clock
+        self.wait_primary = False
+        self.wait_secondary = False
+        # Called before each rate-limit wait with the number of seconds to wait.
+        self.on_wait: Callable[[float], None] | None = None
+        self.rate_limit: RateLimit | None = None
+        self.api_requests = 0  # requests to the REST API; raw file downloads not counted
+        self._stats_lock = threading.Lock()
 
     def _headers(self, accept: str) -> dict[str, str]:
         headers = {
@@ -84,43 +127,152 @@ class GitHubClient:
         params: dict[str, str] | None = None,
     ) -> httpx.Response:
         last_error = ""
-        for attempt in range(RETRIES + 1):
-            if attempt:
-                self._sleep(0.5 * 2 ** (attempt - 1))
+        failures = waits = 0
+        while failures <= RETRIES:
+            if failures:
+                self._wait(0.5 * 2 ** (failures - 1))
             try:
                 resp = self._http.get(url, headers=self._headers(accept), params=params)
             except httpx.TransportError as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
+                failures += 1
                 continue
+            self._track(url, resp)
             if resp.status_code >= 500:
                 last_error = f"HTTP {resp.status_code}"
+                failures += 1
                 continue
-            self._raise_for_status(resp)
+            try:
+                self._raise_for_status(resp)
+            except RateLimitError as exc:
+                delay = self._rate_limit_delay(exc)
+                if delay is None or waits >= RATE_LIMIT_WAITS:
+                    raise
+                waits += 1
+                if self.on_wait is not None:
+                    self.on_wait(delay)
+                self._wait(delay)
+                continue
             return resp
         raise NetworkError(
             f"request to {self.host} failed after {RETRIES + 1} attempts: {last_error}"
         )
 
+    def _wait(self, seconds: float) -> None:
+        if not self.interrupted.is_set():
+            if self._sleep is None:
+                self.interrupted.wait(seconds)
+            else:
+                self._sleep(seconds)
+        if self.interrupted.is_set():
+            raise Interrupted("interrupted while waiting for GitHub")
+
+    def _track(self, url: str, resp: httpx.Response) -> None:
+        if not url.startswith(self.api):
+            return
+        headers = resp.headers
+        with self._stats_lock:
+            self.api_requests += 1
+            with contextlib.suppress(KeyError, ValueError):  # no quota headers: keep the last
+                self.rate_limit = RateLimit(
+                    int(headers["x-ratelimit-limit"]),
+                    int(headers["x-ratelimit-remaining"]),
+                    float(headers["x-ratelimit-reset"]),
+                )
+
+    def _rate_limit_delay(self, exc: RateLimitError) -> float | None:
+        """Seconds to wait before a retry, or None to give up."""
+        if exc.retry_after is not None:
+            if self.wait_secondary and exc.retry_after <= MAX_SECONDARY_WAIT:
+                return exc.retry_after
+            return None
+        if exc.reset_at is not None and self.wait_primary:
+            delay = max(exc.reset_at - self._clock(), 0.0) + 1.0
+            return delay if delay <= MAX_PRIMARY_WAIT else None
+        return None
+
     def _raise_for_status(self, resp: httpx.Response) -> None:
         code = resp.status_code
         if code < 400:
             return
-        if code == 429 or (code == 403 and resp.headers.get("x-ratelimit-remaining") == "0"):
-            reset = resp.headers.get("x-ratelimit-reset")
-            when = ""
-            if reset and reset.isdigit():
-                when = dt.datetime.fromtimestamp(int(reset), dt.UTC).strftime(
-                    " (resets at %Y-%m-%d %H:%M:%S UTC)"
-                )
-            hint = "" if self.token else "; set GITHUB_TOKEN to raise the limit"
-            raise RateLimitError(f"GitHub API rate limit exceeded{when}{hint}")
+        if code in (403, 429):
+            self._raise_for_rate_limit(resp)
         if code == 401:
-            raise AccessError("GitHub rejected the token (HTTP 401)")
+            raise TokenError("GitHub rejected the token (HTTP 401)")
         if code == 403:
             raise AccessError(f"GitHub denied access (HTTP 403): {_message(resp)}")
         if code in (404, 409, 422):
             raise NotFound(_message(resp))
         raise AtlasError(f"unexpected GitHub response HTTP {code}: {_message(resp)}")
+
+    def _raise_for_rate_limit(self, resp: httpx.Response) -> None:
+        headers = resp.headers
+        hint = "" if self.token else "; set GITHUB_TOKEN to raise the limit"
+        if headers.get("x-ratelimit-remaining") == "0":
+            reset = headers.get("x-ratelimit-reset")
+            reset_at = float(reset) if reset and reset.isdigit() else None
+            when = ""
+            if reset_at is not None:
+                when = dt.datetime.fromtimestamp(reset_at, dt.UTC).strftime(
+                    " (resets at %Y-%m-%d %H:%M:%S UTC)"
+                )
+            raise RateLimitError(f"GitHub API rate limit exceeded{when}{hint}", reset_at=reset_at)
+        # Secondary limits: too many requests at once or too fast, whatever the quota.
+        retry = headers.get("retry-after", "")
+        if resp.status_code == 429 or retry.isdigit() or "rate limit" in _message(resp).lower():
+            seconds = float(retry) if retry.isdigit() else SECONDARY_DEFAULT_WAIT
+            raise RateLimitError(
+                f"GitHub secondary rate limit exceeded; retry after {seconds:.0f} s{hint}",
+                retry_after=seconds,
+            )
+
+    def account(self, login: str) -> dict[str, Any]:
+        """`GET /users/{login}`: works for organizations as well, `type` tells them apart."""
+        try:
+            data: dict[str, Any] = self._get(f"{self.api}/users/{quote(login, safe='')}").json()
+        except NotFound:
+            raise AccessError(f"GitHub account {login!r} not found") from None
+        return data
+
+    def viewer(self) -> str | None:
+        """Login of the token owner, or None without a token."""
+        if not self.token:
+            return None
+        try:
+            return str(self._get(f"{self.api}/user").json().get("login") or "") or None
+        except (NotFound, AccessError):
+            return None  # an app token has no user
+
+    def list_repos(self, login: str, kind: str) -> Iterator[list[dict[str, Any]]]:
+        """Every repository of an account, one page at a time.
+
+        `kind` is `organization`, `user`, or `viewer` (the token owner: private
+        repositories too; `/users/{login}/repos` lists public ones only).
+        """
+        name = quote(login, safe="")
+        if kind == "organization":
+            url, params = f"{self.api}/orgs/{name}/repos", {"type": "all"}
+        elif kind == "viewer":
+            url, params = f"{self.api}/user/repos", {"affiliation": "owner", "visibility": "all"}
+        else:
+            url, params = f"{self.api}/users/{name}/repos", {"type": "owner"}
+        query: dict[str, str] | None = {**params, "per_page": str(PAGE_SIZE), "sort": "full_name"}
+        next_url: str | None = url
+        while next_url:
+            try:
+                resp = self._get(next_url, params=query)
+            except NotFound:
+                raise AccessError(f"cannot list repositories of {login!r}") from None
+            page = resp.json()
+            if not isinstance(page, list):
+                raise AtlasError(f"unexpected repository listing for {login!r}")
+            yield page
+            # The next page URL carries the query. Never follow it off the API host:
+            # the request would send the token there.
+            next_url = resp.links.get("next", {}).get("url")
+            if next_url and not next_url.startswith(self.api + "/"):
+                raise AtlasError(f"unexpected pagination URL {next_url!r}")
+            query = None
 
     def repo(self, owner: str, name: str) -> dict[str, Any]:
         try:

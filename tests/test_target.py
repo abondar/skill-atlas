@@ -6,7 +6,7 @@ import pytest
 
 from skill_atlas.errors import UsageError
 from skill_atlas.sources.git import remote_to_key, strip_credentials
-from skill_atlas.target import GitHubTarget, LocalTarget, parse_target
+from skill_atlas.target import GitHubTarget, LocalTarget, OrgTarget, parse_target
 
 
 @pytest.mark.parametrize(
@@ -21,9 +21,11 @@ from skill_atlas.target import GitHubTarget, LocalTarget, parse_target
             GitHubTarget("github.com", "o", "r", ["feature", "x", "skills"]),
         ),
         ("https://ghe.corp/o/r", GitHubTarget("ghe.corp", "o", "r")),
+        ("https://github.com/o", OrgTarget("github.com", "o")),
+        ("https://github.com/orgs/o/repositories", OrgTarget("github.com", "o")),
     ],
 )
-def test_remote_forms(raw: str, expected: GitHubTarget) -> None:
+def test_remote_forms(raw: str, expected: GitHubTarget | OrgTarget) -> None:
     assert parse_target(raw) == expected
 
 
@@ -40,7 +42,14 @@ def test_existing_path_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.parametrize(
-    "raw", ["", "not a target", "https://github.com/o", "https://github.com/o/r/pulls"]
+    "raw",
+    [
+        "",
+        "not a target",
+        "https://github.com",
+        "https://github.com/o.x",
+        "https://github.com/o/r/pulls",
+    ],
 )
 def test_invalid(raw: str) -> None:
     with pytest.raises(UsageError):
