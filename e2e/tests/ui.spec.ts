@@ -182,6 +182,55 @@ test("organization scan: summary, failures, owner filter, repositories without s
   await expect(page.locator(".grid")).toContainText("triage");
 });
 
+test("pins: pinned repositories and skills come first and survive a reload", async ({ page, atlas }) => {
+  await login(page, atlas);
+  const repoTitles = page.locator(".grid .card-title");
+  await expect(repoTitles).toHaveText([/mps/, /koog/]); // latest scan first
+  const koog = page.locator(".card-wrap", { hasText: "koog" });
+  await koog.getByRole("button", { name: "Pin repository" }).click();
+  await expect(repoTitles).toHaveText([/koog/, /mps/]);
+  await expect(koog.locator(".pin")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Unpin repository" })).toBeFocused();
+  await page.locator(".toolbar select").selectOption("name");
+  await expect(repoTitles).toHaveText([/koog/, /mps/]); // pinned first in every sort order
+  await page.reload();
+  await expect(repoTitles).toHaveText([/koog/, /mps/]); // saved on the server
+
+  await koog.locator("a.card").click();
+  await expect(page.locator(".repo-head .btn.pinned")).toHaveText("Pinned");
+  const skillTitles = page.locator(".grid .card-title");
+  await expect(skillTitles).toHaveText(["add-java", "split"]);
+  await page.locator(".card-wrap", { hasText: "split" }).getByRole("button", { name: "Pin skill" }).click();
+  await expect(skillTitles).toHaveText(["split", "add-java"]);
+  await expect(page.locator(".result-line")).toContainText("1 pinned");
+  await page.reload();
+  await expect(skillTitles).toHaveText(["split", "add-java"]);
+
+  // The skill panel has the same toggle.
+  await page.locator(".grid .card", { hasText: "split" }).click();
+  const drawer = page.locator(".drawer");
+  await drawer.getByRole("button", { name: "Pinned" }).click();
+  await expect(drawer.getByRole("button", { name: "Pin", exact: true })).toBeVisible();
+  await expect(skillTitles).toHaveText(["add-java", "split"]);
+  await drawer.getByRole("button", { name: "Pin", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(skillTitles).toHaveText(["split", "add-java"]);
+
+  // The Skills page shows the pinned skill's family first, and pins families too.
+  await page.locator('.nav a[href="#/skills"]').click();
+  const families = page.locator(".group-list .card .name");
+  await expect(families.first()).toHaveText("split");
+  const pdf = page.locator(".card-wrap", { hasText: "pdf" });
+  await pdf.getByRole("button", { name: "Pin skill" }).click();
+  // Both pinned: the usual order within the pinned ones, by repositories, then by name.
+  await expect(families.first()).toHaveText("pdf");
+  await expect(families.nth(1)).toHaveText("split");
+  await expect(pdf.locator(".pin")).toHaveAttribute("aria-pressed", "true");
+  await page.locator('.nav a[href="#/"]').click();
+  await page.locator("a.card", { hasText: "mps" }).click();
+  await expect(skillTitles.first()).toHaveText("pdf"); // the family pin is the skill's pin
+});
+
 test("phone width: no horizontal scroll", async ({ page, atlas }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, atlas);

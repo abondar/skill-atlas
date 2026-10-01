@@ -5,7 +5,8 @@ Security model:
   cannot reach it through DNS rebinding.
 - A random token in the start URL sets an HttpOnly, SameSite=Strict cookie. Every API
   call needs the cookie; other local users and other sites cannot read the store.
-- POST needs a custom header and a JSON body, so a cross-site form cannot start a scan.
+- POST needs a custom header and a JSON body, so a cross-site form cannot start a scan
+  or change pins.
 - Every string from a snapshot is sanitized server-side and inserted as text. Skill
   bodies are rendered from Markdown with raw HTML and images disabled. A strict CSP
   forbids inline scripts, so injected markup cannot run.
@@ -32,7 +33,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from markdown_it import MarkdownIt
 
-from skill_atlas import aggregate, categories, crossrepo, similarity, store
+from skill_atlas import aggregate, categories, crossrepo, favorites, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import OrgRepo, Snapshot
 from skill_atlas.org import OrgRequest, OrgState, run_org_scan
@@ -40,7 +41,7 @@ from skill_atlas.progress import org_status_line
 from skill_atlas.sanitize import sanitize, sanitize_line
 from skill_atlas.sources.github import GitHubClient
 from skill_atlas.target import GitHubTarget, OrgTarget, Target, parse_target
-from skill_atlas.views import dup_key, org_summary, owner_key, permalink
+from skill_atlas.views import dup_key, org_summary, owner_key, permalink, pinned_first
 
 COOKIE = "skill_atlas_token"
 CSP = (
@@ -54,6 +55,7 @@ STATIC = {
     "/favicon.ico": ("favicon.svg", "image/svg+xml"),
 }
 MAX_BODY = 64 * 1024
+MAX_PINS = 1000  # entries in one POST /api/favorites
 INDEX_CACHE = 4  # similarity indexes kept in memory, one per snapshot file
 
 
@@ -96,7 +98,10 @@ def render_markdown(text: str) -> str:
     return str(_MD.render(sanitize(text)))
 
 
-def snapshot_view(snap: Snapshot, name: str | None) -> dict[str, Any]:
+def snapshot_view(
+    snap: Snapshot, name: str | None, fav: favorites.Favorites | None = None
+) -> dict[str, Any]:
+    fav = fav or favorites.Favorites()
     data = snap.model_dump(mode="json", exclude={"skills"})
     skills = []
     for s in snap.skills:
@@ -105,6 +110,7 @@ def snapshot_view(snap: Snapshot, name: str | None) -> dict[str, Any]:
         item["permalink"] = permalink(snap, s)
         item["dup_key"] = json.dumps(dup_key(s))
         item["relevant"] = categories.matches(s.category, "relevant")
+        item["pinned"] = fav.skill_pinned(snap.source, s.id)
         skills.append(item)
     data["skills"] = skills
     data["file"] = name
@@ -241,9 +247,11 @@ class WebApp:
         self,
         store_dir: Path,
         token: str | None = None,
+        favorites_path: Path | None = None,
         github: Callable[[str], GitHubClient] | None = None,
     ) -> None:
         self.store_dir = store_dir
+        self.favorites_path = favorites_path or favorites.default_path(store_dir)
         self.token = token or secrets.token_urlsafe(32)
         # GitHub client per host for scans; None builds the default one (tests pass fakes).
         self.github = github
@@ -260,8 +268,12 @@ class WebApp:
     def _open(self) -> aggregate.Store:
         return aggregate.Store.open(self.store_dir)
 
+    def _favorites(self, warnings: list[str]) -> favorites.Favorites:
+        return favorites.load_or_empty(self.favorites_path, warnings)
+
     def repos(self) -> dict[str, Any]:
         db = self._open()
+        fav = self._favorites(db.warnings)
         rows = []
         for ident, items in db.by_repo().items():
             latest = items[-1].snapshot
@@ -284,9 +296,11 @@ class WebApp:
                     "latest_scan": latest.scan.model_dump(mode="json"),
                     "source": latest.model_dump(mode="json")["source"],
                     "history": [_summary(i) for i in reversed(items)],
+                    "pinned": fav.any_repo_pinned(items),
                 }
             )
         rows.sort(key=lambda r: r["latest"]["scanned_at"], reverse=True)
+        rows = pinned_first(rows, lambda r: bool(r["pinned"]))
         warnings = list(db.warnings)
         orgs = store.latest_orgs(store.orgs_dir(self.store_dir), warnings)
         return dict(
@@ -317,6 +331,7 @@ class WebApp:
         """
         state = self.cross()
         db = state.db
+        fav = self._favorites([])
         ids = {id(item): ident for ident, items in db.by_repo().items() for item in items}
         names: dict[str, dict[str, int]] = {}
         for item in db.latest():
@@ -344,6 +359,7 @@ class WebApp:
                         "compliance": s.compliance.status,
                         "content_sha256": s.content_sha256,
                         "path": s.path or s.source_pointer,
+                        "pinned": fav.skill_pinned(snap.source, s.id),
                         "family": (family := state.family(dup_key(s))),
                         # The most common name in the family, then the alphabetical first.
                         "family_name": min(
@@ -371,7 +387,29 @@ class WebApp:
         path = self._snapshot_path(name)
         if path is None:
             return None
-        return snapshot_view(store.load(path), name)
+        return snapshot_view(store.load(path), name, self._favorites([]))
+
+    def set_pins(
+        self, repo_keys: list[str], skills: list[tuple[str, str]], pinned: bool
+    ) -> dict[str, Any] | None:
+        """Pin or unpin repositories and skills. None when a repository is not in the store."""
+        groups = self._open().by_repo().values()
+        refs: dict[str, favorites.RepoRef] = {}
+        for key in {*repo_keys, *(k for k, _ in skills)}:
+            items = next(
+                (g for g in groups if any(i.snapshot.source.repo_key == key for i in g)), None
+            )
+            if items is None:
+                return None
+            refs[key] = favorites.RepoRef.of_repo(items)
+
+        def change(fav: favorites.Favorites) -> favorites.Favorites:
+            for key in repo_keys:
+                fav = fav.with_repo(refs[key], pinned)
+            return fav.with_skills((favorites.SkillRef(refs[k], i) for k, i in skills), pinned)
+
+        fav = favorites.update(self.favorites_path, change)
+        return {"pinned": pinned, "repos": len(fav.repos), "skills": len(fav.skills)}
 
     def _index(self, path: Path) -> tuple[Snapshot, similarity.Index]:
         with self._lock:
@@ -699,7 +737,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self._json(HTTPStatus.ACCEPTED, job.view())
             return
-        if path != "/api/scan":
+        if path not in ("/api/scan", "/api/favorites"):
             self._error(HTTPStatus.NOT_FOUND, "not found")
             return
         length = int(self.headers.get("Content-Length") or 0)
@@ -711,7 +749,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             self._error(HTTPStatus.BAD_REQUEST, "invalid JSON")
             return
-        target = body.get("target") if isinstance(body, dict) else None
+        if not isinstance(body, dict):
+            self._error(HTTPStatus.BAD_REQUEST, "expected a JSON object")
+            return
+        if path == "/api/favorites":
+            try:
+                self._post_favorites(body)
+            except AtlasError as exc:
+                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, sanitize_line(str(exc)))
+            return
+        target = body.get("target")
         if not isinstance(target, str) or not target.strip():
             self._error(HTTPStatus.BAD_REQUEST, "target is required")
             return
@@ -720,6 +767,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._error(HTTPStatus.CONFLICT, "a scan is already running")
             return
         self._json(HTTPStatus.ACCEPTED, job.view())
+
+    def _post_favorites(self, body: dict[str, Any]) -> None:
+        # {"pinned": bool, "repos": [repo_key], "skills": [{"repo_key", "id"}]}
+        pinned, repos, skills = body.get("pinned"), body.get("repos", []), body.get("skills", [])
+
+        def text(v: Any) -> bool:
+            return isinstance(v, str) and bool(v)
+
+        if (
+            not isinstance(pinned, bool)
+            or not isinstance(repos, list)
+            or not isinstance(skills, list)
+            or not all(text(k) for k in repos)
+            or not all(
+                isinstance(s, dict) and text(s.get("repo_key")) and text(s.get("id"))
+                for s in skills
+            )
+        ):
+            self._error(HTTPStatus.BAD_REQUEST, "expected pinned, repos and skills")
+            return
+        if not repos and not skills:
+            self._error(HTTPStatus.BAD_REQUEST, "nothing to pin")
+            return
+        if len(repos) + len(skills) > MAX_PINS:
+            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "too many entries")
+            return
+        result = self.server.app.set_pins(repos, [(s["repo_key"], s["id"]) for s in skills], pinned)
+        if result is None:
+            self._error(HTTPStatus.NOT_FOUND, "no such repository")
+            return
+        self._json(HTTPStatus.OK, result)
 
 
 class Server(http.server.ThreadingHTTPServer):

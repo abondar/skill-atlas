@@ -19,6 +19,7 @@ const ICONS = {
   clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z M12 6v6l4 2",
   commit: "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M2 12h6 M16 12h6",
   star: "M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1L12 2Z",
+  pin: "M12 17v5 M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2v.8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9a2 2 0 0 1-1.1-1.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z",
   scale: "M12 3v18 M5 7h14 M5 7l-3 7a4 4 0 0 0 6 0L5 7Z M19 7l-3 7a4 4 0 0 0 6 0l-3-7Z M8 21h8",
   alert: "M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z M12 9v4 M12 17h.01",
   check: "M20 6 9 17l-5-5",
@@ -205,6 +206,67 @@ async function loadSnapshot(file) {
     cache.snapshots.set(file, await api(`/api/snapshot?file=${encodeURIComponent(file)}`));
   }
   return cache.snapshots.get(file);
+}
+
+// --- pins -----------------------------------------------------------------------------
+// Pinned repositories and skills come first in every list. Not GitHub stars: those are
+// shown with the star icon. A row of several entries (identical copies, a family) is
+// pinned when any entry is; toggling it pins or unpins all of them (views.pin_target).
+
+const pinnedFirst = (items, pinned) => [...items].sort((a, b) => pinned(b) - pinned(a)); // stable
+
+// Pin or unpin. `skills` items are {repo_id, repo_key, id}. Updates the cached data in place.
+async function setPins({ repos = [], skills = [] }, pinned) {
+  try {
+    await api("/api/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Skill-Atlas": "1" },
+      body: JSON.stringify({ pinned, repos: repos.map((r) => r.repo_key), skills: skills.map(({ repo_key, id }) => ({ repo_key, id })) }),
+    });
+  } catch (e) {
+    toast(`Could not ${pinned ? "pin" : "unpin"}: ${e.message}`, "bad");
+    return false;
+  }
+  for (const r of repos) r.pinned = pinned;
+  const keys = new Set(skills.map((s) => `${s.repo_id}\n${s.id}`));
+  const repoOfFile = new Map();
+  for (const r of cache.repos?.repos || []) for (const x of r.history) repoOfFile.set(x.file, r.id);
+  for (const [file, snap] of cache.snapshots) {
+    for (const s of snap.skills) if (keys.has(`${repoOfFile.get(file)}\n${s.id}`)) s.pinned = pinned;
+  }
+  for (const rows of cache.skills.values()) {
+    for (const s of rows) if (keys.has(`${s.repo_id}\n${s.id}`)) s.pinned = pinned;
+  }
+  return true;
+}
+
+// The pin toggle on a card. `onToggle(next)` returns a promise of success.
+function pinButton(pinned, what, onToggle) {
+  const label = `${pinned ? "Unpin" : "Pin"} ${what}`;
+  return h(
+    "button",
+    {
+      class: `pin${pinned ? " on" : ""}`,
+      type: "button",
+      title: pinned ? "Pinned: shown first. Click to unpin." : `Pin: show this ${what} first`,
+      "aria-label": label,
+      "aria-pressed": pinned ? "true" : "false",
+      onclick: async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const button = e.currentTarget;
+        button.disabled = true; // no second request while the first one runs
+        await onToggle(!pinned);
+        button.disabled = false; // after a failure; on success the list has a new button
+      },
+    },
+    icon("pin"),
+  );
+}
+
+// A card plus its pin button: a button cannot sit inside a link or another button.
+function withPin(card, button) {
+  return h("div", { class: "card-wrap" }, card, button);
 }
 
 function invalidate() {
@@ -408,16 +470,19 @@ async function renderHome(params, token) {
     const q = (p.get("q") || "").toLowerCase();
     const showEmpty = p.get("empty") === "1";
     let rows = scope.filter((r) => `${r.repo_key} ${r.description || ""}`.toLowerCase().includes(q));
-    const hidden = showEmpty ? 0 : rows.filter((r) => !r.total).length;
-    if (!showEmpty) rows = rows.filter((r) => r.total);
+    // A pinned repository stays visible even without skills.
+    const hidden = showEmpty ? 0 : rows.filter((r) => !r.total && !r.pinned).length;
+    if (!showEmpty) rows = rows.filter((r) => r.total || r.pinned);
     const by = p.get("sort") || "recent";
+    if (by === "recent") rows = [...rows].sort((a, b) => b.latest.scanned_at.localeCompare(a.latest.scanned_at));
     if (by === "skills") rows = [...rows].sort((a, b) => b.latest.skills - a.latest.skills);
     if (by === "name") rows = [...rows].sort((a, b) => a.repo_key.localeCompare(b.repo_key));
+    rows = pinnedFirst(rows, (r) => r.pinned);
     const parts = [];
     if (q) parts.push(`${plural(rows.length, "repository", "repositories")} match`);
     if (hidden) parts.push(`${plural(hidden, "repository", "repositories")} without skills hidden`);
     resultLine.textContent = parts.join(" · ");
-    grid.replaceChildren(...rows.map(repoCard));
+    grid.replaceChildren(...rows.map((r) => repoCard(r, updateGrid)));
     if (!rows.length) grid.replaceChildren(emptyState("search", "No matches", hidden ? "No skills found here. Switch on “Without skills” to see every repository." : "Try another name."));
   }
 
@@ -497,11 +562,16 @@ function stat(ic, label, value, hint) {
   return h("div", { class: "stat" }, h("div", { class: "label" }, icon(ic), label), h("div", { class: "value" }, value), h("div", { class: "hint" }, hint));
 }
 
-function repoCard(r) {
+function repoCard(r, onPin) {
   const names = repoName(r.source, r.repo_key);
   const { host, owner, name } = names;
   const meta = r.meta || {};
-  return h(
+  const pin = pinButton(r.pinned, "repository", async (next) => {
+    if (await setPins({ repos: [r] }, next)) onPin();
+    refocusPin(`repo:${r.id}`);
+  });
+  pin.dataset.pin = `repo:${r.id}`;
+  return withPin(h(
     "a",
     { class: "card", href: href("repo", r.id) },
     h(
@@ -526,7 +596,17 @@ function repoCard(r) {
       meta.stars !== null && meta.stars !== undefined ? h("span", { class: "item" }, icon("star"), num(meta.stars)) : null,
       h("span", { class: "item", title: when(r.latest.scanned_at) }, icon("clock"), ago(r.latest.scanned_at)),
     ),
-  );
+  ), pin);
+}
+
+// The list re-renders after a pin; keep the keyboard focus on the same pin button.
+function refocusPin(key) {
+  for (const el of document.querySelectorAll("button.pin")) {
+    if (el.dataset.pin === key) {
+      el.focus();
+      return;
+    }
+  }
 }
 
 // --- repository page ----------------------------------------------------------------
@@ -616,6 +696,26 @@ async function renderRepo(id, params, token) {
         )
       : null;
 
+  const repoPin = h("span", { class: "pin-slot" });
+  function drawRepoPin() {
+    repoPin.replaceChildren(
+      h(
+        "button",
+        {
+          class: `btn${repo.pinned ? " pinned" : ""}`,
+          "aria-pressed": repo.pinned ? "true" : "false",
+          title: repo.pinned ? "Pinned: shown first on the Repositories page" : "Show this repository first on the Repositories page",
+          onclick: async () => {
+            if (await setPins({ repos: [repo] }, !repo.pinned)) drawRepoPin();
+          },
+        },
+        icon("pin"),
+        repo.pinned ? "Pinned" : "Pin",
+      ),
+    );
+  }
+  drawRepoPin();
+
   const head = h(
     "div",
     { class: "repo-head" },
@@ -639,6 +739,7 @@ async function renderRepo(id, params, token) {
       "div",
       { class: "actions" },
       snapSelect,
+      repoPin,
       repo.rescan_target
         ? h("button", { class: "btn", onclick: () => scanDialog.open(repo.rescan_target, true) }, icon("refresh"), "Rescan")
         : null,
@@ -772,12 +873,14 @@ function skillsTab() {
         ),
     );
     const matching = others.filter((s) => matchesCategory(s, f.cat));
-    page.rows = groupCopies(matching, f.group);
+    page.rows = pinnedFirst(groupCopies(matching, f.group), rowPinned);
     const shown = matching.length;
     const hidden = others.length - shown;
     const parts = [`${plural(page.rows.length, "result")}`];
     if (page.rows.length < shown) parts.push(`${num(shown)} entries, identical copies grouped`);
     if (hidden) parts.push(`${num(hidden)} hidden by the relevance filter`);
+    const pinned = page.rows.filter(rowPinned).length;
+    if (pinned) parts.push(`${num(pinned)} pinned`);
     line.textContent = parts.join(" · ");
     grid.replaceChildren(...page.rows.map(skillCard));
     if (!page.rows.length) {
@@ -803,14 +906,31 @@ function skillsTab() {
     select("comp", "Compliance", comps),
     h("label", { class: "switch" }, groupToggle, "Group copies"),
   ]);
+  page.update = update;
   update();
   return h("div", {}, selects, h("div", { class: "toolbar" }, catChips), line, grid);
+}
+
+const rowEntries = (row) => [row.skill, ...row.copies];
+const rowPinned = (row) => rowEntries(row).some((s) => s.pinned);
+
+// Pin or unpin a skill with its identical copies, then redraw the list.
+async function pinSkill(entries, next) {
+  const items = entries.map((s) => ({ repo_id: page.repo.id, repo_key: page.repo.repo_key, id: s.id }));
+  const ok = await setPins({ skills: items }, next);
+  if (ok) page.update?.();
+  return ok;
 }
 
 function skillCard(row) {
   const s = row.skill;
   const aux = !s.relevant;
-  return h(
+  const pin = pinButton(rowPinned(row), "skill", async (next) => {
+    await pinSkill(rowEntries(row), next);
+    refocusPin(`skill:${s.id}`);
+  });
+  pin.dataset.pin = `skill:${s.id}`;
+  return withPin(h(
     "button",
     { class: `card${aux ? " aux" : ""}`, onclick: () => openSkill(s.id) },
     h(
@@ -828,7 +948,7 @@ function skillCard(row) {
       row.copies.length ? h("span", { class: "badge accent" }, icon("layers"), `${row.copies.length + 1} locations`) : null,
     ),
     h("div", { class: "card-path" }, s.path || s.source_pointer),
-  );
+  ), pin);
 }
 
 function scanDetails(snap, file) {
@@ -941,6 +1061,27 @@ function openSkill(id, updateUrl = true) {
     if (x.name && x.name === s.name && x.kind === s.kind && x.dup_key !== s.dup_key && !versions.some((v) => v.dup_key === x.dup_key)) versions.push(x);
   }
 
+  const pinSlot = h("span", { class: "pin-slot" });
+  function drawPin() {
+    const pinned = [s, ...copies].some((x) => x.pinned);
+    pinSlot.replaceChildren(
+      h(
+        "button",
+        {
+          class: `btn sm${pinned ? " pinned" : ""}`,
+          "aria-pressed": pinned ? "true" : "false",
+          title: pinned ? "Pinned: shown first in the lists" : "Show this skill first in the lists",
+          onclick: async () => {
+            if (await pinSkill([s, ...copies], !pinned)) drawPin();
+          },
+        },
+        icon("pin"),
+        pinned ? "Pinned" : "Pin",
+      ),
+    );
+  }
+  drawPin();
+
   const tabsEl = h("div", { class: "tabs", role: "tablist" });
   const body = h("div", { class: "drawer-body" });
   const sim = { data: null, error: null };
@@ -983,6 +1124,7 @@ function openSkill(id, updateUrl = true) {
         { class: "top" },
         h("div", { class: `avatar ${hue(s.type)}` }, icon(kindIcon(s))),
         h("h2", {}, s.name || "(unnamed)"),
+        pinSlot,
         s.permalink ? h("a", { class: "btn sm", href: s.permalink, target: "_blank", rel: "noopener noreferrer" }, icon("external"), "GitHub") : null,
         h("button", { class: "btn ghost icon-only", "aria-label": "Close", onclick: () => closeDrawer() }, icon("x")),
       ),
@@ -1316,10 +1458,11 @@ async function renderSkills(params, token) {
     }
     // A family matches when any member does: a renamed copy stays with its original.
     const hit = (s) => `${s.name || ""} ${s.description} ${s.repo_key}`.toLowerCase().includes(q);
-    const sorted = [...groups.values()].filter((g) => !q || g.items.some(hit)).sort((a, b) => new Set(b.items.map((i) => i.repo_id)).size - new Set(a.items.map((i) => i.repo_id)).size || a.name.localeCompare(b.name));
+    const byRepos = [...groups.values()].filter((g) => !q || g.items.some(hit)).sort((a, b) => new Set(b.items.map((i) => i.repo_id)).size - new Set(a.items.map((i) => i.repo_id)).size || a.name.localeCompare(b.name));
+    const sorted = pinnedFirst(byRepos, (g) => g.items.some((s) => s.pinned));
     const shown = sorted.slice(0, 300);
     line.textContent = `${plural(sorted.length, "skill")} across ${plural(data.repos.length, "repository", "repositories")}${sorted.length > shown.length ? ` · showing the first ${shown.length}` : ""}`;
-    list.replaceChildren(...shown.map(groupCard));
+    list.replaceChildren(...shown.map((g) => groupCard(g, update)));
     if (!shown.length) list.replaceChildren(emptyState("search", "No skills found", q ? "Try another search." : "Scan a repository first."));
   }
 
@@ -1332,13 +1475,20 @@ async function renderSkills(params, token) {
   update();
 }
 
-function groupCard(g) {
+function groupCard(g, onPin) {
   const repos = new Map();
   for (const s of g.items) if (!repos.has(s.repo_id)) repos.set(s.repo_id, s);
   const variants = new Set(g.items.map((s) => s.content_sha256 || s.id)).size;
   const otherNames = [...new Set(g.items.map((s) => s.name).filter((n) => n && n !== g.name))].sort();
   const first = g.items.find((s) => s.name === g.name) || g.items[0];
-  return h(
+  const key = `family:${first.family}`;
+  // A family spans repositories: the pin applies to every member shown here.
+  const pin = pinButton(g.items.some((s) => s.pinned), "skill", async (next) => {
+    if (await setPins({ skills: g.items }, next)) onPin();
+    refocusPin(key);
+  });
+  pin.dataset.pin = key;
+  return withPin(h(
     "div",
     { class: "card group" },
     h(
@@ -1359,7 +1509,7 @@ function groupCard(g) {
         return h("a", { class: `badge cat-${s.category || "none"}`, href: href("repo", s.repo_id, { skill: s.id, cat: "all" }), title: s.path }, `${owner}/${name}`);
       }),
     ),
-  );
+  ), pin);
 }
 
 // --- scan dialog ------------------------------------------------------------------

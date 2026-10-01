@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from skill_atlas import __version__, aggregate, categories, store
+from skill_atlas import __version__, aggregate, categories, favorites, store
 from skill_atlas.errors import AtlasError, StoreError, UsageError
 from skill_atlas.model import ORG_REPO_STATUSES, OrgScan, Snapshot
 from skill_atlas.org import DEFAULT_JOBS, MAX_JOBS, NullOrgProgress, OrgRequest, run_org_scan
@@ -39,6 +39,8 @@ PLAIN_OPTION = typer.Option(
     "--plain", help="Print a plain-text report (no TUI, no colors) for scripts and agents."
 )
 WITH_BODY_OPTION = typer.Option("--with-body", help="With --plain: include skill bodies.")
+PINNED_OPTION = typer.Option("--pinned", help="Only pinned entries.")
+PIN_MARK = "●"
 
 
 def _version(value: bool) -> None:
@@ -363,13 +365,17 @@ def scan(
 def repos(
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
     sort: Annotated[
-        Literal["scanned", "skills", "name"], typer.Option(help="Sort order.")
+        Literal["scanned", "skills", "name"],
+        typer.Option(help="Sort order; pinned repositories come first."),
     ] = "scanned",
+    pinned: Annotated[bool, PINNED_OPTION] = False,
 ) -> None:
     """List known repositories and their latest scans."""
     db = aggregate.Store.open(store.scans_dir())
+    rows = aggregate.repos(db, sort, _favorites(db.warnings))
     _print_warnings(db.warnings)
-    rows = aggregate.repos(db, sort)
+    if pinned:
+        rows = [r for r in rows if r.pinned]
     if as_json:
         out.print_json(json.dumps([dataclasses.asdict(r) for r in rows]))
         return
@@ -377,11 +383,12 @@ def repos(
         out.print(f"no snapshots in {store.scans_dir()}")
         return
     table = Table(box=None, header_style="bold cyan", pad_edge=False)
-    for col in ("repo", "last scan", "commit", "skills", "agents", "scans"):
+    for col in ("pin", "repo", "last scan", "commit", "skills", "agents", "scans"):
         table.add_column(col, justify="right" if col in ("skills", "agents", "scans") else "left")
     for r in rows:
         sha = (r.commit_sha or "")[:8] + (" dirty" if r.dirty else "")
         table.add_row(
+            PIN_MARK if r.pinned else "",
             _cell(r.repo_key),
             r.last_scanned_at,
             sha or "—",
@@ -409,14 +416,14 @@ def skills(
     all_scans: Annotated[
         bool, typer.Option("--all-scans", help="Use every snapshot, not only the latest.")
     ] = False,
+    pinned: Annotated[bool, PINNED_OPTION] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
 ) -> None:
-    """List skills across the latest snapshot of each repository."""
+    """List skills across the latest snapshot of each repository, pinned first."""
     if category not in categories.SELECTORS:
         choices = ", ".join(categories.SELECTORS)
         raise UsageError(f"unknown category {category!r}; use one of {choices}")
     db = aggregate.Store.open(store.scans_dir())
-    _print_warnings(db.warnings)
     rows = aggregate.skill_rows(
         db,
         name=name,
@@ -425,7 +432,11 @@ def skills(
         kind=None if kind == "all" else kind,
         category=category,
         all_scans=all_scans,
+        favorites=_favorites(db.warnings),
     )
+    _print_warnings(db.warnings)
+    if pinned:
+        rows = [r for r in rows if r.pinned]
     if group_by != "none":
         groups = aggregate.group(rows, group_by)
         if as_json:
@@ -433,12 +444,14 @@ def skills(
             return
         table = Table(box=None, header_style="bold cyan", pad_edge=False)
         key_label = "name" if group_by == "name" else "sha256"
-        for col in (key_label, "repos", "variants", "types", "names" if group_by == "hash" else ""):
+        names_col = "names" if group_by == "hash" else ""
+        for col in ("pin", key_label, "repos", "variants", "types", names_col):
             if col:
                 table.add_column(col)
         for g in groups:
             key = g.key if group_by == "name" else g.key[:12]
             cells: list[Text | str] = [
+                PIN_MARK if g.pinned else "",
                 _cell(key),
                 str(len(g.repos)),
                 str(g.variants),
@@ -458,6 +471,7 @@ def skills(
                         "repo_key": r.repo_key,
                         "commit_sha": r.commit_sha,
                         "scanned_at": r.scanned_at,
+                        "pinned": r.pinned,
                         "skill": r.skill.model_dump(mode="json", exclude={"body"}),
                     }
                     for r in rows
@@ -466,11 +480,12 @@ def skills(
         )
         return
     table = Table(box=None, header_style="bold cyan", pad_edge=False)
-    for col in ("repo", "name", "category", "type", "compliance", "path"):
+    for col in ("pin", "repo", "name", "category", "type", "compliance", "path"):
         table.add_column(col)
     for r in rows:
         s = r.skill
         table.add_row(
+            PIN_MARK if r.pinned else "",
             _cell(r.repo_key),
             _cell(s.name),
             s.category or "—",
@@ -480,6 +495,61 @@ def skills(
         )
     out.print(table)
     out.print(f"{len(rows)} skills")
+
+
+def _favorites(warnings: list[str]) -> favorites.Favorites:
+    return favorites.load_or_empty(favorites.default_path(store.scans_dir()), warnings)
+
+
+def _set_pins(repo_key: str, skill_ids: list[str], pinned: bool) -> None:
+    db = aggregate.Store.open(store.scans_dir())
+    _print_warnings(db.warnings)
+    key = repo_key.lower()
+    items = next(
+        (g for g in db.by_repo().values() if any(i.snapshot.source.repo_key == key for i in g)),
+        None,
+    )
+    if items is None:
+        raise UsageError(f"no snapshot for {repo_key!r}; see `skill-atlas repos`")
+    repo = favorites.RepoRef.of_repo(items)
+    known = {s.id for i in items for s in i.snapshot.skills}
+    if unknown := [s for s in skill_ids if s not in known]:
+        raise UsageError(
+            f"no skill {unknown[0]!r} in {repo_key!r}; see `skill-atlas skills --json`"
+        )
+    path = favorites.default_path(store.scans_dir())
+    if skill_ids:
+        refs = [favorites.SkillRef(repo, s) for s in skill_ids]
+        favorites.update(path, lambda f: f.with_skills(refs, pinned))
+    else:
+        favorites.update(path, lambda f: f.with_repo(repo, pinned))
+    verb = "pinned" if pinned else "unpinned"
+    for what in skill_ids or [repo.repo_key]:
+        out.print(Text(f"{verb} {sanitize_line(what)}"))
+
+
+REPO_KEY_ARG = typer.Argument(help="repo_key, see `skill-atlas repos`.")
+SKILL_IDS_ARG = typer.Argument(
+    help="Skill ids (`<type>:<path>`) in that repository; without them, the repository."
+)
+
+
+@app.command()
+def pin(
+    repo_key: Annotated[str, REPO_KEY_ARG],
+    skill_ids: Annotated[list[str] | None, SKILL_IDS_ARG] = None,
+) -> None:
+    """Pin a repository or its skills: they come first in every list."""
+    _set_pins(repo_key, skill_ids or [], pinned=True)
+
+
+@app.command()
+def unpin(
+    repo_key: Annotated[str, REPO_KEY_ARG],
+    skill_ids: Annotated[list[str] | None, SKILL_IDS_ARG] = None,
+) -> None:
+    """Remove the pin from a repository or its skills."""
+    _set_pins(repo_key, skill_ids or [], pinned=False)
 
 
 @app.command()

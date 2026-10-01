@@ -150,7 +150,7 @@ def find_cached(
     return None
 
 
-# --- organization scan reports (SPEC section 7.5) -------------------------------------
+# --- organization scan reports (SPEC section 7.6) -------------------------------------
 
 
 def orgs_dir(scans: Path) -> Path:

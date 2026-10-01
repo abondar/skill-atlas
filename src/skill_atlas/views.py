@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from typing import Any
 from urllib.parse import quote
 
@@ -56,6 +57,19 @@ def permalink(snap: Snapshot, skill: Skill) -> str | None:
         f"https://{quote(src.host or 'github.com')}/{quote(src.owner or '')}/"
         f"{quote(src.name or '')}/blob/{src.commit_sha}/{quote(skill.path)}"
     )
+
+
+def pinned_first[T](items: Iterable[T], pinned: Callable[[T], bool]) -> list[T]:
+    """Pinned items first. The sort is stable: each part keeps the current order."""
+    return sorted(items, key=lambda item: not pinned(item))
+
+
+def pin_target(states: Iterable[bool]) -> bool:
+    """The new state for a row of several entries (copies, a family).
+
+    A row is pinned when any entry is; toggling it pins or unpins every entry.
+    """
+    return not any(states)
 
 
 def owner_key(repo_key: str) -> str:
