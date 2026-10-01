@@ -331,7 +331,7 @@ async function renderHome(params, token) {
       emptyState(
         "layers",
         "No repositories yet",
-        "Scan a GitHub repository, an organization or a local path to build your skill atlas.",
+        "Scan a GitHub repository or a local path to build your skill atlas.",
         h("button", { class: "btn primary", onclick: () => scanDialog.open() }, icon("plus"), "Scan your first repository"),
       ),
     );
