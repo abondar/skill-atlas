@@ -63,9 +63,11 @@ jobs:
       - name: Playwright tests
         if: ${{ !inputs.update_screenshots }}
         run: npx playwright test
+      # "all", not the default "changed": a change within the tolerance (a new small icon)
+      # would otherwise keep a baseline that no longer shows the current UI.
       - name: Rewrite the baselines
         if: ${{ inputs.update_screenshots }}
-        run: npx playwright test --update-snapshots
+        run: npx playwright test --update-snapshots=all
       - name: Upload the baselines
         if: ${{ inputs.update_screenshots }}
         uses: actions/upload-artifact@v7
