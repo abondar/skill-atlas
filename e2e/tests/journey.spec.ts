@@ -123,6 +123,9 @@ test("analyze a repository and get the list of its skills", async ({ page, atlas
     await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
     await expect(page.locator("a.card")).toHaveCount(2);
     await expect(page.locator(".stats")).toContainText("Repositories");
+    // A pinned repository comes first, before the one scanned later.
+    await page.locator(".card-wrap", { hasText: "acme-app" }).getByRole("button", { name: "Pin repository" }).click();
+    await expect(page.locator(".grid .card-title")).toHaveText([/acme-app/, /acme-fork/]);
     await shot(page, "10-home");
   });
 
@@ -130,6 +133,7 @@ test("analyze a repository and get the list of its skills", async ({ page, atlas
     await page.emulateMedia({ colorScheme: "dark" });
     await page.locator("a.card", { hasText: "acme-app" }).click();
     await expect(cards).toHaveCount(5);
+    await expect(page.locator(".repo-head .btn.pinned")).toHaveText("Pinned");
     await shot(page, "11-repo-dark");
     await page.emulateMedia({ colorScheme: "light" });
   });

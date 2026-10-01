@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Literal
 
 from skill_atlas import categories
+from skill_atlas.favorites import Favorites
 from skill_atlas.model import Skill
 from skill_atlas.store import Loaded, iter_snapshots
+from skill_atlas.views import pinned_first
 
 GroupBy = Literal["none", "name", "hash"]
 
@@ -76,9 +78,16 @@ class RepoRow:
     agents: int
     scans: int
     snapshot: str
+    pinned: bool = False
 
 
-def repos(store: Store, sort: Literal["scanned", "skills", "name"] = "scanned") -> list[RepoRow]:
+def repos(
+    store: Store,
+    sort: Literal["scanned", "skills", "name"] = "scanned",
+    favorites: Favorites | None = None,
+) -> list[RepoRow]:
+    """One row per repository, pinned first, then in `sort` order."""
+    fav = favorites or Favorites()
     rows: list[RepoRow] = []
     for items in store.by_repo().values():
         last = items[-1]
@@ -93,6 +102,7 @@ def repos(store: Store, sort: Literal["scanned", "skills", "name"] = "scanned") 
                 agents=snap.stats.agents,
                 scans=len(items),
                 snapshot=last.path.name,
+                pinned=fav.any_repo_pinned(items),
             )
         )
     if sort == "skills":
@@ -101,7 +111,7 @@ def repos(store: Store, sort: Literal["scanned", "skills", "name"] = "scanned") 
         rows.sort(key=lambda r: r.repo_key)
     else:
         rows.sort(key=lambda r: r.last_scanned_at, reverse=True)
-    return rows
+    return pinned_first(rows, lambda r: r.pinned)
 
 
 @dataclass
@@ -110,6 +120,7 @@ class SkillRow:
     commit_sha: str | None
     scanned_at: str
     skill: Skill
+    pinned: bool = False
 
 
 @dataclass
@@ -120,6 +131,7 @@ class SkillGroup:
     repos: list[str] = field(default_factory=list)
     variants: int = 0
     occurrences: int = 0
+    pinned: bool = False
 
 
 def skill_rows(
@@ -131,7 +143,10 @@ def skill_rows(
     kind: str | None = "skill",
     category: str = "all",
     all_scans: bool = False,
+    favorites: Favorites | None = None,
 ) -> list[SkillRow]:
+    """Skill entries, pinned first, then by repository and name."""
+    fav = favorites or Favorites()
     items = store.snapshots if all_scans else store.latest()
     needle = name.lower() if name else None
     rows: list[SkillRow] = []
@@ -149,10 +164,16 @@ def skill_rows(
             if needle and needle not in (s.name or "").lower():
                 continue
             rows.append(
-                SkillRow(snap.source.repo_key, snap.source.commit_sha, snap.scan.scanned_at, s)
+                SkillRow(
+                    snap.source.repo_key,
+                    snap.source.commit_sha,
+                    snap.scan.scanned_at,
+                    s,
+                    fav.skill_pinned(snap.source, s.id),
+                )
             )
     rows.sort(key=lambda r: (r.repo_key, r.skill.name or "", r.skill.id, r.scanned_at))
-    return rows
+    return pinned_first(rows, lambda r: r.pinned)
 
 
 def group(rows: list[SkillRow], by: Literal["name", "hash"]) -> list[SkillGroup]:
@@ -163,6 +184,7 @@ def group(rows: list[SkillRow], by: Literal["name", "hash"]) -> list[SkillGroup]
         key = (s.name or "(unnamed)") if by == "name" else (s.content_sha256 or "(no content)")
         g = groups.setdefault(key, SkillGroup(key))
         g.occurrences += 1
+        g.pinned = g.pinned or r.pinned
         if s.name and s.name not in g.names:
             g.names.append(s.name)
         if s.type not in g.types:
@@ -175,4 +197,5 @@ def group(rows: list[SkillRow], by: Literal["name", "hash"]) -> list[SkillGroup]
         g.names.sort()
         g.types.sort()
         g.repos.sort()
-    return sorted(groups.values(), key=lambda g: (-len(g.repos), g.key))
+    ordered = sorted(groups.values(), key=lambda g: (-len(g.repos), g.key))
+    return pinned_first(ordered, lambda g: g.pinned)
