@@ -6,7 +6,7 @@ from pathlib import Path
 from rich.console import Console
 from textual.widgets import DataTable, Static
 
-from skill_atlas import aggregate, store
+from skill_atlas import aggregate, favorites, store
 from skill_atlas.model import Snapshot, Stats
 from skill_atlas.tui import (
     AtlasApp,
@@ -257,3 +257,111 @@ def test_browser_scan_failure_keeps_the_list(tmp_path: Path) -> None:
             await pilot.press("q")
 
     asyncio.run(scenario())
+
+
+def test_pins_come_first_on_both_screens(tmp_path: Path) -> None:
+    scans = saved_store(tmp_path)
+    path = favorites.default_path(scans)
+
+    def names(table: DataTable[object]) -> list[str]:
+        return [str(table.get_row_at(i)[1]) for i in range(table.row_count)]
+
+    async def scenario() -> None:
+        app = BrowserApp(aggregate.Store.open(scans), scans)
+        async with app.run_test(size=(140, 40)) as pilot:
+            repos = app.screen
+            assert isinstance(repos, ReposScreen)
+            table = repos.query_one("#repos", DataTable)
+            before = names(table)
+            table.move_cursor(row=1)
+            await pilot.press("p")
+            assert names(table) == [before[1], before[0]]
+            assert str(table.get_row_at(0)[0]) == "●"
+            assert table.cursor_row == 0  # the cursor follows the pinned repository
+            await pilot.press("p")
+            assert names(table) == before
+            local = next(i for i, items in enumerate(repos.rows) if items[-1].snapshot.stats.skills)
+            table.move_cursor(row=local)
+            await pilot.press("enter")
+            await pilot.pause()
+            snap = app.screen
+            assert isinstance(snap, SnapshotScreen)
+            skills = snap.query_one("#table", DataTable)
+            assert names(skills)[-1] == "good"
+            skills.move_cursor(row=skills.row_count - 1)
+            await pilot.press("p")
+            assert names(skills)[0] == "good"
+            assert snap.current() is not None and snap.current().name == "good"  # type: ignore[union-attr]
+            assert "1 pinned" in str(snap.query_one("#status", Static).visual)
+            await pilot.press("q")
+
+    asyncio.run(scenario())
+    fav = favorites.load(path)
+    assert not fav.repos
+    assert [s.id for s in fav.skills] == ["agent-skill:skills/good/SKILL.md"]
+
+    async def reopened() -> None:
+        # A new session reads the pins back from the file.
+        app = BrowserApp(aggregate.Store.open(scans), scans)
+        async with app.run_test(size=(140, 40)) as pilot:
+            repos = app.screen
+            assert isinstance(repos, ReposScreen)
+            local = next(i for i, items in enumerate(repos.rows) if items[-1].snapshot.stats.skills)
+            repos.query_one("#repos", DataTable).move_cursor(row=local)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, SnapshotScreen)
+            assert names(app.screen.query_one("#table", DataTable))[0] == "good"
+            await pilot.press("q")
+
+    asyncio.run(reopened())
+
+
+def test_pinning_grouped_copies_pins_every_copy(tmp_path: Path) -> None:
+    same = "---\nname: pdf\ndescription: d\n---\nbody\n"
+    root = make_tree(
+        tmp_path / "repo",
+        {
+            ".agents/skills/a/SKILL.md": "---\nname: a\ndescription: d\n---\na\n",
+            ".claude/skills/pdf/SKILL.md": same,
+            ".agents/skills/pdf/SKILL.md": same,
+        },
+    )
+    scans = tmp_path / "scans"
+    snap = scan_path(root)
+    store.save(snap, scans)
+
+    async def scenario() -> None:
+        app = AtlasApp(snap, None, scans)
+        async with app.run_test(size=(140, 40)) as pilot:
+            screen = app.screen
+            assert isinstance(screen, SnapshotScreen)
+            table = screen.query_one("#table", DataTable)
+            assert table.row_count == 2
+            table.move_cursor(row=1)
+            await pilot.press("p")
+            await pilot.press("d")  # show every copy: both are pinned and come first
+            assert [str(table.get_row_at(i)[0]) for i in range(3)] == ["●", "●", ""]
+            await pilot.press("d", "p")  # unpin the grouped row: every copy
+            assert [str(table.get_row_at(i)[0]) for i in range(2)] == ["", ""]
+            await pilot.press("q")
+
+    asyncio.run(scenario())
+    assert favorites.load(favorites.default_path(scans)) == favorites.Favorites()
+
+
+def test_broken_favorites_file_shows_no_pins_and_is_kept(tmp_path: Path) -> None:
+    scans = saved_store(tmp_path)
+    path = favorites.default_path(scans)
+    path.write_text("broken")
+
+    async def scenario() -> None:
+        app = BrowserApp(aggregate.Store.open(scans), scans)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.press("p")  # reports the error, does not overwrite the file
+            await pilot.pause()
+            assert isinstance(app.screen, ReposScreen)
+            await pilot.press("q")
+
+    asyncio.run(scenario())
+    assert path.read_text() == "broken"

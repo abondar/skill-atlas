@@ -88,11 +88,17 @@ skill-atlas skills --group-by name                 # same skill name across repo
 skill-atlas skills --group-by hash                 # identical copies across repositories
 skill-atlas show github.com/anthropics/skills      # TUI on a saved snapshot, offline
 skill-atlas show github.com/anthropics/skills --plain
+skill-atlas pin github.com/anthropics/skills       # pinned repositories and skills come first everywhere
+skill-atlas pin github.com/o/r agent-skill:skills/pdf/SKILL.md
+skill-atlas skills --pinned                        # only pinned skills; unpin removes a pin
 ```
+
+Pins live in `$SKILL_ATLAS_HOME/favorites.json`, next to `scans/`: snapshots stay
+immutable. The TUI (`p`) and the web UI (the pin button on every card) change the same file.
 
 ## TUI keys
 
-`j/k` move · `/` search · `g` category · `f` kind · `t` type · `c` compliance · `d` group copies ·
+`j/k` move · `/` search · `g` category · `f` kind · `t` type · `c` compliance · `d` group copies · `p` pin ·
 `1`–`8` tabs (6 = how the snapshot was made, 7 = similar skills, 8 = other repositories) · `o` open on GitHub · `e` export ·
 `Enter` open repository · `n` scan a new repository · `Esc` back · `q` quit
 

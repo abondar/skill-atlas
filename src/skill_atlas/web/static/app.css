@@ -182,6 +182,20 @@ select.select {
 .card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); transform: translateY(-1px); text-decoration: none; }
 .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card.aux { opacity: 0.72; }
+
+/* Pins: a button next to the card, not inside it (no button inside a link or a button). */
+.card-wrap { position: relative; display: flex; min-width: 0; }
+.card-wrap > .card { flex: 1; }
+.card-wrap > .card .card-head, .card-wrap > .card .group-head { padding-right: 30px; }
+.pin {
+  position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 30px; height: 30px;
+  border: none; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer;
+}
+.pin:hover { background: var(--surface-2); color: var(--fg); }
+.pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pin.on, .btn.pinned svg.icon { color: var(--accent); }
+.pin.on svg.icon, .btn.pinned svg.icon { fill: currentColor; }
+.pin-slot { display: contents; }
 .card-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .card-head > div { min-width: 0; }
 .card-title { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }

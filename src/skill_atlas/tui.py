@@ -22,17 +22,22 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static, TabbedContent, TabPane
 
-from skill_atlas import aggregate, categories, crossrepo, similarity, store
+from skill_atlas import aggregate, categories, crossrepo, favorites, similarity, store
 from skill_atlas.errors import AtlasError
 from skill_atlas.model import Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
-from skill_atlas.views import dedupe, permalink, versions
+from skill_atlas.views import dedupe, permalink, pin_target, pinned_first, versions
 
 TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan", "similar", "repos")
 TAB_TITLES = {"repos": "Other repos"}
 COMPLIANCE_FILTERS: tuple[str | None, ...] = (None, "compliant", "loadable", "broken")
 KIND_FILTERS: tuple[str | None, ...] = ("skill", "agent", None)
 CATEGORY_FILTERS = ("relevant", "auxiliary", "all")
+PIN_MARK = "●"  # not a star: GitHub stars are shown as a number
+
+
+def pin_cell(pinned: bool) -> Text:
+    return Text(PIN_MARK if pinned else "", style="bold yellow")
 
 
 def _s(value: object) -> str:
@@ -347,6 +352,7 @@ class SnapshotScreen(Screen[None]):
         Binding("t", "cycle_type", "Type"),
         Binding("c", "cycle_compliance", "Compliance"),
         Binding("d", "toggle_dedupe", "Copies"),
+        Binding("p", "pin", "Pin"),
         Binding("j", "cursor(1)", "Down", show=False),
         Binding("k", "cursor(-1)", "Up", show=False),
         Binding("o", "open", "Open on GitHub"),
@@ -367,6 +373,9 @@ class SnapshotScreen(Screen[None]):
     ) -> None:
         super().__init__()
         self.store_dir = store_dir
+        self.favorites_path = favorites.default_path(store_dir) if store_dir else None
+        self._favorites_warnings: list[str] = []
+        self.favorites = favorites.load_or_empty(self.favorites_path, self._favorites_warnings)
         self._cross: tuple[crossrepo.CrossIndex, set[str]] | None = None
         self.snapshot = snapshot
         self.snapshot_path = snapshot_path
@@ -402,9 +411,11 @@ class SnapshotScreen(Screen[None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#table", DataTable)
-        table.add_columns("name", "copies", "category", "type", "compliance", "path")
+        table.add_columns("pin", "name", "copies", "category", "type", "compliance", "path")
         self.refresh_rows()
         table.focus()
+        for w in self._favorites_warnings:
+            self.notify(sanitize_line(w), severity="warning")
 
     # --- data -----------------------------------------------------------------------
 
@@ -422,17 +433,23 @@ class SnapshotScreen(Screen[None]):
             return self.query_text.lower() in hay
         return True
 
+    def pinned(self, skill: Skill) -> bool:
+        """A row is pinned when the skill or any of its grouped copies is."""
+        entries = [skill, *self.copies.get(skill.id, [])]
+        return any(self.favorites.skill_pinned(self.snapshot.source, s.id) for s in entries)
+
     def refresh_rows(self) -> None:
         table = self.query_one("#table", DataTable)
         table.clear()
         matching = [s for s in self.snapshot.skills if self._matches(s)]
         grouped = dedupe(matching) if self.dedupe else [(s, []) for s in matching]
-        self.rows = [s for s, _ in grouped]
         self.copies = {s.id: copies for s, copies in grouped}
+        self.rows = pinned_first([s for s, _ in grouped], self.pinned)
         for s in self.rows:
             extra = len(self.copies[s.id])
             auxiliary = categories.matches(s.category, "auxiliary")
             table.add_row(
+                pin_cell(self.pinned(s)),
                 Text(_s(s.name), style="dim" if auxiliary else ""),
                 Text(f"+{extra}" if extra else "", style="magenta"),
                 Text(s.category or "—", style="dim" if auxiliary else "cyan"),
@@ -464,6 +481,8 @@ class SnapshotScreen(Screen[None]):
         text = f"{shown}/{len(self.snapshot.skills)} shown"
         if shown > len(self.rows):
             text += f" in {len(self.rows)} rows"
+        if pinned := sum(1 for s in self.rows if self.pinned(s)):
+            text += f" · {pinned} pinned"
         hidden = sum(
             1
             for s in self.snapshot.skills
@@ -601,6 +620,27 @@ class SnapshotScreen(Screen[None]):
         self.dedupe = not self.dedupe
         self.refresh_rows()
 
+    def action_pin(self) -> None:
+        skill = self.current()
+        if skill is None:
+            return
+        if self.favorites_path is None:
+            self.notify("Pins are kept in the store; this snapshot has none.", severity="warning")
+            return
+        entries = [skill, *self.copies.get(skill.id, [])]
+        source = self.snapshot.source
+        pinned = pin_target(self.favorites.skill_pinned(source, s.id) for s in entries)
+        refs = [favorites.SkillRef(favorites.RepoRef.of(source), s.id) for s in entries]
+        try:
+            self.favorites = favorites.update(
+                self.favorites_path, lambda f: f.with_skills(refs, pinned)
+            )
+        except AtlasError as exc:
+            self.notify(sanitize_line(str(exc)), title="Cannot pin", severity="error")
+            return
+        self.refresh_rows()
+        self.query_one("#table", DataTable).move_cursor(row=self.rows.index(skill))
+
     def action_cursor(self, delta: int) -> None:
         table = self.query_one("#table", DataTable)
         if delta > 0:
@@ -684,6 +724,7 @@ class ReposScreen(Screen[None]):
         Binding("enter", "open", "Open", show=True),
         Binding("slash", "search", "Search"),
         Binding("n", "new_scan", "Scan repo"),
+        Binding("p", "pin", "Pin"),
         Binding("escape", "cancel", "Cancel", show=False),
         Binding("j", "cursor(1)", "Down", show=False),
         Binding("k", "cursor(-1)", "Up", show=False),
@@ -691,11 +732,14 @@ class ReposScreen(Screen[None]):
 
     def __init__(self, db: aggregate.Store, store_dir: Path) -> None:
         super().__init__()
+        self._favorites_warnings: list[str] = []
         self.store_dir = store_dir
         self.query_text = ""
         self.scanning = False
         self.repos: list[list[store.Loaded]] = []
         self.rows: list[list[store.Loaded]] = []
+        self.favorites_path = favorites.default_path(store_dir)
+        self.favorites = favorites.load_or_empty(self.favorites_path, self._favorites_warnings)
         self._load(db)
 
     def _load(self, db: aggregate.Store) -> None:
@@ -727,21 +771,25 @@ class ReposScreen(Screen[None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#repos", DataTable)
-        table.add_columns("repo", "skills", "agents", "scans", "last scan", "commit")
+        table.add_columns("pin", "repo", "skills", "agents", "scans", "last scan", "commit")
         self.refresh_rows()
         table.focus()
+        for w in self._favorites_warnings:
+            self.notify(sanitize_line(w), severity="warning")
 
     def refresh_rows(self) -> None:
         table = self.query_one("#repos", DataTable)
         table.clear()
         needle = self.query_text.lower()
-        self.rows = [
-            items for items in self.repos if needle in items[-1].snapshot.source.repo_key.lower()
-        ]
+        self.rows = pinned_first(
+            (i for i in self.repos if needle in i[-1].snapshot.source.repo_key.lower()),
+            self.favorites.any_repo_pinned,
+        )
         for i, items in enumerate(self.rows):
             snap = items[-1].snapshot
             sha = (snap.source.commit_sha or "")[:8] or "—"
             table.add_row(
+                pin_cell(self.favorites.any_repo_pinned(items)),
                 Text(_s(snap.source.repo_key)),
                 Text(str(snap.stats.skills), justify="right"),
                 Text(str(snap.stats.agents), justify="right"),
@@ -754,7 +802,7 @@ class ReposScreen(Screen[None]):
         if not self.scanning:
             self.set_status(
                 f"{len(self.rows)}/{len(self.repos)} shown · Enter opens the latest snapshot"
-                " · n scans a new repository"
+                " · n scans a new repository · p pins"
             )
 
     def set_status(self, text: str) -> None:
@@ -863,6 +911,22 @@ class ReposScreen(Screen[None]):
         self.app.push_screen(
             SnapshotScreen(latest.snapshot, latest.path, can_go_back=True, store_dir=self.store_dir)
         )
+
+    def action_pin(self) -> None:
+        items = self.current()
+        if items is None:
+            return
+        pinned = pin_target([self.favorites.any_repo_pinned(items)])
+        repo = favorites.RepoRef.of_repo(items)
+        try:
+            self.favorites = favorites.update(
+                self.favorites_path, lambda f: f.with_repo(repo, pinned)
+            )
+        except AtlasError as exc:
+            self.notify(sanitize_line(str(exc)), title="Cannot pin", severity="error")
+            return
+        self.refresh_rows()
+        self.query_one("#repos", DataTable).move_cursor(row=self.rows.index(items))
 
     def action_search(self) -> None:
         search = self.query_one("#search", Input)

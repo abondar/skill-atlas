@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Iterator
@@ -8,7 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from skill_atlas import store
+from skill_atlas import favorites, store
 from skill_atlas.web import COOKIE, Job, Server, WebApp
 from tests.conftest import make_tree, scan_path
 
@@ -263,3 +264,91 @@ def test_crossrepo_and_families(client: httpx.Client, tmp_path: Path) -> None:
     assert len(rows) == 2 and rows[0]["family"] == rows[1]["family"]
     assert rows[0]["family_name"] == "bump"
     assert client.get("/api/crossrepo", params={"file": name, "id": "x"}).status_code == 404
+
+
+PIN_HEADERS = {"X-Skill-Atlas": "1"}
+
+
+def test_pins_need_the_same_checks_as_a_scan(server: Server, client: httpx.Client) -> None:
+    key = client.get("/api/repos").json()["repos"][0]["repo_key"]
+    body = {"pinned": True, "repos": [key]}
+    assert client.post("/api/favorites", json=body).status_code == 403  # no custom header
+    form = client.post("/api/favorites", data={"pinned": "1"}, headers=PIN_HEADERS)
+    assert form.status_code == 403  # not JSON
+    with httpx.Client(base_url=base(server)) as anonymous:
+        assert anonymous.post("/api/favorites", json=body, headers=PIN_HEADERS).status_code == 401
+    foreign = {**PIN_HEADERS, "Host": "evil.example"}
+    assert client.post("/api/favorites", json=body, headers=foreign).status_code == 403
+    assert not favorites.default_path(server.app.store_dir).exists()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"repos": ["k"]},  # no pinned
+        {"pinned": "yes", "repos": ["k"]},
+        {"pinned": True},  # nothing to pin
+        {"pinned": True, "repos": "k"},
+        {"pinned": True, "repos": [""]},
+        {"pinned": True, "skills": [{"repo_key": "k"}]},
+        {"pinned": True, "skills": ["k"]},
+        ["not", "an", "object"],
+    ],
+)
+def test_pin_requests_are_validated(client: httpx.Client, body: object) -> None:
+    assert client.post("/api/favorites", json=body, headers=PIN_HEADERS).status_code == 400
+
+
+def test_pin_and_unpin(server: Server, client: httpx.Client, tmp_path: Path) -> None:
+    other = make_tree(tmp_path / "other", {"skills/z/SKILL.md": "---\nname: z\n---\n"})
+    store.save(scan_path(other), server.app.store_dir)
+    repos = client.get("/api/repos").json()["repos"]
+    assert [r["pinned"] for r in repos] == [False, False]
+    last = repos[-1]  # the older scan
+    unknown = {"pinned": True, "repos": ["github.com/no/such"]}
+    assert client.post("/api/favorites", json=unknown, headers=PIN_HEADERS).status_code == 404
+
+    r = client.post(
+        "/api/favorites", json={"pinned": True, "repos": [last["repo_key"]]}, headers=PIN_HEADERS
+    )
+    assert r.status_code == 200 and r.json() == {"pinned": True, "repos": 1, "skills": 0}
+    repos = client.get("/api/repos").json()["repos"]
+    assert repos[0]["repo_key"] == last["repo_key"]  # pinned first
+    assert [r["pinned"] for r in repos] == [True, False]
+
+    file = last["latest"]["file"]
+    snap = client.get("/api/snapshot", params={"file": file}).json()
+    real = [s["id"] for s in snap["skills"] if s["name"] == "real"]  # two identical copies
+    skills = [{"repo_key": last["repo_key"], "id": i} for i in real]
+    body = {"pinned": True, "skills": skills}
+    assert client.post("/api/favorites", json=body, headers=PIN_HEADERS).json()["skills"] == 2
+    snap = client.get("/api/snapshot", params={"file": file}).json()
+    assert {s["id"] for s in snap["skills"] if s["pinned"]} == set(real)
+    rows = client.get("/api/skills", params={"category": "all"}).json()["skills"]
+    assert {r["id"] for r in rows if r["pinned"]} == set(real)
+
+    body = {"pinned": False, "repos": [last["repo_key"]], "skills": skills}
+    assert client.post("/api/favorites", json=body, headers=PIN_HEADERS).json() == {
+        "pinned": False,
+        "repos": 0,
+        "skills": 0,
+    }
+    assert json.loads(favorites.default_path(server.app.store_dir).read_text()) == {
+        "repos": [],
+        "skills": [],
+        "version": 1,
+    }
+
+
+def test_broken_favorites_file_is_an_error_not_a_reset(
+    server: Server, client: httpx.Client
+) -> None:
+    path = favorites.default_path(server.app.store_dir)
+    path.write_text("broken")
+    data = client.get("/api/repos").json()
+    assert data["repos"][0]["pinned"] is False
+    assert any("favorites" in w for w in data["warnings"])
+    key = data["repos"][0]["repo_key"]
+    r = client.post("/api/favorites", json={"pinned": True, "repos": [key]}, headers=PIN_HEADERS)
+    assert r.status_code == 500 and "invalid favorites file" in r.json()["error"]
+    assert path.read_text() == "broken"

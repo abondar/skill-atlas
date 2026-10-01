@@ -84,6 +84,38 @@ def test_repos_skills_show(repo: Path) -> None:
     assert run("show", "github.com/none/none").returncode == 2
 
 
+def test_pin_and_unpin(repo: Path, tmp_path: Path) -> None:
+    other = make_tree(tmp_path / "other", CASES["d2_claude_command"])
+    assert run("scan", str(repo), "--no-tui").returncode == 0
+    assert run("scan", str(other), "--no-tui").returncode == 0
+    keys = [r["repo_key"] for r in json.loads(run("repos", "--json").stdout)]
+    older = keys[-1]
+    proc = run("pin", older)
+    assert proc.returncode == 0, proc.stderr
+    assert f"pinned {older}" in proc.stdout
+    repos = json.loads(run("repos", "--json").stdout)
+    assert [(r["repo_key"], r["pinned"]) for r in repos] == [(older, True), (keys[0], False)]
+    assert [r["repo_key"] for r in json.loads(run("repos", "--json", "--pinned").stdout)] == [older]
+    assert "●" in run("repos").stdout
+
+    skills = json.loads(run("skills", "--json", "--repo", keys[0]).stdout)
+    last = skills[-1]["skill"]["id"]
+    assert run("pin", keys[0], last).returncode == 0
+    rows = json.loads(run("skills", "--json").stdout)
+    assert (rows[0]["skill"]["id"], rows[0]["pinned"]) == (last, True)
+    assert [r["skill"]["id"] for r in json.loads(run("skills", "--json", "--pinned").stdout)] == [
+        last
+    ]
+    grouped = run("skills", "--group-by", "name", "--json")
+    assert json.loads(grouped.stdout)[0]["pinned"] is True
+
+    assert run("pin", "github.com/no/such").returncode == 2
+    assert run("pin", keys[0], "agent-skill:no/SKILL.md").returncode == 2
+    assert run("unpin", older).returncode == 0
+    assert run("unpin", keys[0], last).returncode == 0
+    assert run("repos", "--json", "--pinned").stdout.strip() == "[]"
+
+
 def test_skills_category_filter(tmp_path: Path) -> None:
     root = make_tree(tmp_path / "repo", CASES["noise"])
     assert run("scan", str(root), "--no-tui").returncode == 0
