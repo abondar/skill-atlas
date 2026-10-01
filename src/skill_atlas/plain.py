@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skill_atlas.model import Skill, Snapshot
+from skill_atlas.model import ORG_REPO_STATUSES, OrgScan, Skill, Snapshot
 from skill_atlas.sanitize import sanitize, sanitize_line
 
 
@@ -89,3 +89,34 @@ def _skill_lines(s: Skill, with_body: bool) -> list[str]:
         lines.append("body:")
         lines += [f"  {line}" for line in sanitize(s.body).rstrip("\n").split("\n")]
     return lines
+
+
+def render_org(report: OrgScan, path: Path | None = None) -> str:
+    """Plain-text organization scan report: header fields, then one line per repository."""
+    skipped = ", ".join(f"{k} {v}" for k, v in sorted(report.skipped.items())) or "-"
+    counts = ", ".join(f"{s} {n}" for s in ORG_REPO_STATUSES if (n := report.count(s)))
+    lines = [
+        f"owner: {_v(report.owner_key)}",
+        f"owner_type: {report.owner_type}",
+        f"status: {report.status}",
+        f"message: {_v(report.message)}",
+        f"started_at: {report.started_at}",
+        f"duration: {report.duration_ms / 1000:.1f}s",
+        f"listed: {report.listed}",
+        f"skipped: {skipped}",
+        f"repositories: {len(report.repos)} ({counts or '-'})",
+        f"with_skills: {report.with_skills}",
+        f"api_requests: {report.api_requests}",
+        f"report: {_v(path)}",
+        "",
+    ]
+    for r in report.repos:
+        line = f"repo: {_v(r.repo_key)} status={r.status}"
+        if r.skills is not None:
+            line += f" skills={r.skills} agents={r.agents}"
+        if r.snapshot:
+            line += f" snapshot={_v(r.snapshot)}"
+        if r.error:
+            line += f" error={_v(r.error)}"
+        lines.append(line)
+    return "\n".join(lines) + "\n"

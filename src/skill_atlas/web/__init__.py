@@ -22,6 +22,7 @@ import secrets
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -34,9 +35,13 @@ from markdown_it import MarkdownIt
 
 from skill_atlas import aggregate, categories, crossrepo, favorites, similarity, store
 from skill_atlas.errors import AtlasError
-from skill_atlas.model import Snapshot
+from skill_atlas.model import OrgRepo, Snapshot
+from skill_atlas.org import OrgRequest, OrgState, run_org_scan
+from skill_atlas.progress import org_status_line
 from skill_atlas.sanitize import sanitize, sanitize_line
-from skill_atlas.views import dup_key, permalink, pinned_first
+from skill_atlas.sources.github import GitHubClient
+from skill_atlas.target import GitHubTarget, OrgTarget, Target, parse_target
+from skill_atlas.views import dup_key, org_summary, owner_key, permalink, pinned_first
 
 COOKIE = "skill_atlas_token"
 CSP = (
@@ -131,6 +136,7 @@ def _summary(item: store.Loaded) -> dict[str, Any]:
 class Job:
     id: str
     target: str
+    kind: str = "repo"  # repo | org
     state: str = "running"  # running | done | error
     status: str = "starting"
     error: str | None = None
@@ -140,6 +146,11 @@ class Job:
     started: float = field(default_factory=time.monotonic)
     # Finished stages as [name, seconds]; the running stage is in `status`.
     stages: list[list[Any]] = field(default_factory=list)
+    # Organization scans: live progress, then the summary of the saved report.
+    owner_key: str | None = None
+    org: dict[str, Any] | None = None
+    summary: dict[str, Any] | None = None
+    cancel: threading.Event = field(default_factory=threading.Event)
 
     def view(self) -> dict[str, Any]:
         return dict(
@@ -147,6 +158,7 @@ class Job:
                 {
                     "id": self.id,
                     "target": self.target,
+                    "kind": self.kind,
                     "state": self.state,
                     "status": self.status,
                     "error": self.error,
@@ -155,9 +167,39 @@ class Job:
                     "cache_hit": self.cache_hit,
                     "elapsed": round(time.monotonic() - self.started, 1),
                     "stages": [list(s) for s in self.stages],
+                    "owner_key": self.owner_key,
+                    "org": self.org,
+                    "summary": self.summary,
+                    "cancelling": self.cancel.is_set(),
                 }
             )
         )
+
+
+class JobOrgProgress:
+    def __init__(self, job: Job) -> None:
+        self.job = job
+
+    def update(self, state: OrgState) -> None:
+        now = time.time()
+        wait = state.wait_until - now if state.wait_until else None
+        self.job.status = org_status_line(state, now)
+        self.job.org = {
+            "phase": state.phase,
+            "listed": state.listed,
+            "total": state.total,
+            "done": state.done,
+            "counts": state.counts,
+            "with_skills": state.with_skills,
+            "active": state.active,
+            "failures": [{"full_name": n, "error": e} for n, e in state.failures],
+            "wait_seconds": round(wait) if wait and wait > 0 else None,
+            "rate_remaining": state.rate_remaining,
+            "api_requests": state.api_requests,
+        }
+
+    def finished(self, repo: OrgRepo) -> None:
+        pass
 
 
 class JobProgress:
@@ -202,11 +244,17 @@ class WebApp:
     """Request-independent state and the API implementation."""
 
     def __init__(
-        self, store_dir: Path, token: str | None = None, favorites_path: Path | None = None
+        self,
+        store_dir: Path,
+        token: str | None = None,
+        favorites_path: Path | None = None,
+        github: Callable[[str], GitHubClient] | None = None,
     ) -> None:
         self.store_dir = store_dir
         self.favorites_path = favorites_path or favorites.default_path(store_dir)
         self.token = token or secrets.token_urlsafe(32)
+        # GitHub client per host for scans; None builds the default one (tests pass fakes).
+        self.github = github
         self.allowed_hosts: set[str] = set()
         self.jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
@@ -235,6 +283,7 @@ class WebApp:
                 {
                     "id": ident,
                     "repo_key": src.repo_key,
+                    "owner_key": owner_key(src.repo_key),
                     "description": repo.description if repo else None,
                     "meta": repo.model_dump(mode="json") if repo else None,
                     # What to pass to a rescan: the URL for GitHub, the path for local scans.
@@ -252,7 +301,18 @@ class WebApp:
             )
         rows.sort(key=lambda r: r["latest"]["scanned_at"], reverse=True)
         rows = pinned_first(rows, lambda r: bool(r["pinned"]))
-        return dict(_clean({"store": str(self.store_dir), "warnings": db.warnings, "repos": rows}))
+        warnings = list(db.warnings)
+        orgs = store.latest_orgs(store.orgs_dir(self.store_dir), warnings)
+        return dict(
+            _clean(
+                {
+                    "store": str(self.store_dir),
+                    "warnings": warnings,
+                    "repos": rows,
+                    "orgs": {k: org_summary(v) for k, v in orgs.items()},
+                }
+            )
+        )
 
     def cross(self) -> CrossState:
         """The cross-repository index, rebuilt when the set of snapshot files changes."""
@@ -457,20 +517,60 @@ class WebApp:
     # --- scans ----------------------------------------------------------------------
 
     def start_scan(self, target: str) -> Job | None:
+        try:
+            parsed = parse_target(target)
+        except AtlasError:
+            parsed = None  # the scan thread reports the error like any other
         with self._lock:
             if any(j.state == "running" for j in self.jobs.values()):
                 return None
             job = Job(uuid.uuid4().hex[:12], target)
+            if isinstance(parsed, OrgTarget):
+                job.kind = "org"
+                job.owner_key = f"{parsed.host}/{parsed.owner}".lower()
             self.jobs[job.id] = job
-        threading.Thread(target=self._scan, args=(job,), daemon=True).start()
+        work = self._scan_org if isinstance(parsed, OrgTarget) else self._scan
+        threading.Thread(target=work, args=(job, parsed), daemon=True).start()
         return job
 
-    def _scan(self, job: Job) -> None:
+    def cancel_scan(self, job_id: str) -> Job | None:
+        job = self.jobs.get(job_id)
+        if job is not None and job.kind == "org" and job.state == "running":
+            job.cancel.set()  # repository scans already running finish first
+        return job
+
+    def _client(self, host: str) -> GitHubClient | None:
+        return self.github(host) if self.github is not None else None
+
+    def _scan_org(self, job: Job, target: OrgTarget) -> None:
+        try:
+            outcome = run_org_scan(
+                OrgRequest(owner=target.owner, host=target.host),
+                store_dir=self.store_dir,
+                client=self._client(target.host),
+                progress=JobOrgProgress(job),
+                cancel=job.cancel,
+            )
+        except AtlasError as exc:
+            job.error, job.state = str(exc), "error"
+            return
+        except Exception as exc:  # report, do not kill the server thread silently
+            job.error, job.state = f"unexpected error: {exc!r}", "error"
+            return
+        job.owner_key = outcome.report.owner_key
+        job.summary = org_summary(outcome.report)
+        job.state = "done"
+
+    def _scan(self, job: Job, parsed: Target | None = None) -> None:
         from skill_atlas.scan import ScanRequest, run_scan
 
+        host = parsed.host if isinstance(parsed, GitHubTarget) else "github.com"
         try:
             outcome = run_scan(
-                ScanRequest(target=job.target), store_dir=self.store_dir, progress=JobProgress(job)
+                ScanRequest(target=job.target),
+                store_dir=self.store_dir,
+                client=self._client(host),
+                progress=JobProgress(job),
             )
         except AtlasError as exc:
             job.error, job.state = str(exc), "error"
@@ -630,6 +730,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._error(HTTPStatus.FORBIDDEN, "missing X-Skill-Atlas header or JSON body")
             return
         path = urlsplit(self.path).path
+        if path.startswith("/api/scan/") and path.endswith("/cancel"):
+            job = self.server.app.cancel_scan(path.removeprefix("/api/scan/")[: -len("/cancel")])
+            if job is None:
+                self._error(HTTPStatus.NOT_FOUND, "no such scan")
+            else:
+                self._json(HTTPStatus.ACCEPTED, job.view())
+            return
         if path not in ("/api/scan", "/api/favorites"):
             self._error(HTTPStatus.NOT_FOUND, "not found")
             return

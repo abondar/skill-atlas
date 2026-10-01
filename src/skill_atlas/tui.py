@@ -6,11 +6,12 @@ or Rich renderables, never as markup strings.
 
 from __future__ import annotations
 
+import threading
 import time
 import webbrowser
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
@@ -20,13 +21,28 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
+from textual.timer import Timer
 from textual.widgets import DataTable, Footer, Input, Static, TabbedContent, TabPane
 
 from skill_atlas import aggregate, categories, crossrepo, favorites, similarity, store
 from skill_atlas.errors import AtlasError
-from skill_atlas.model import Skill, Snapshot
+from skill_atlas.model import OrgRepo, OrgScan, Skill, Snapshot
+from skill_atlas.progress import org_status_line
 from skill_atlas.sanitize import sanitize, sanitize_line
-from skill_atlas.views import dedupe, permalink, pin_target, pinned_first, versions
+from skill_atlas.views import (
+    dedupe,
+    org_counts_line,
+    org_summary,
+    owner_key,
+    permalink,
+    pin_target,
+    pinned_first,
+    versions,
+)
+
+if TYPE_CHECKING:  # the scan modules load on the first scan, not on every TUI start
+    from skill_atlas.org import OrgState
+    from skill_atlas.target import OrgTarget, Target
 
 TABS = ("overview", "frontmatter", "body", "resources", "warnings", "scan", "similar", "repos")
 TAB_TITLES = {"repos": "Other repos"}
@@ -325,6 +341,28 @@ def repo_view(items: list[store.Loaded]) -> RenderableType:
             s.scan.fetch_method,
         )
     parts.append(history)
+    return Group(*parts)
+
+
+def org_view(report: OrgScan) -> RenderableType:
+    """The latest organization scan of the selected owner (SPEC section 8)."""
+    o = org_summary(report)
+    kind = "organization" if o["owner_type"] == "organization" else "user"
+    status_style = {"complete": "green", "partial": "yellow"}.get(o["status"], "red")
+    head = Text.assemble(
+        (f"{kind} {_s(o['owner'])}", "bold"),
+        "  ",
+        (o["status"], status_style),
+        (f"  scanned {o['finished_at'][:16].replace('T', ' ')}", "dim"),
+        (f" · {o['api_requests']} API requests", "dim"),
+    )
+    parts: list[RenderableType] = [head, Text(org_counts_line(o))]
+    if o["message"]:
+        parts.append(Text(_s(o["message"]), style="yellow"))
+    if o["failures"]:
+        parts.append(Text(f"failed ({len(o['failures'])})", style="bold red"))
+        for f in o["failures"]:
+            parts.append(Text(f"  {_s(f['full_name'])}: {_s(f['error'])}"))
     return Group(*parts)
 
 
@@ -707,6 +745,20 @@ class StatusProgress:
         pass
 
 
+class OrgStatusProgress:
+    """Organization scan progress for the TUI. Never blocks the scan workers: they only
+    store the latest line, and the screen shows it on a timer."""
+
+    def __init__(self) -> None:
+        self.text = "listing repositories"
+
+    def update(self, state: OrgState) -> None:
+        self.text = org_status_line(state)
+
+    def finished(self, repo: OrgRepo) -> None:
+        pass
+
+
 class ReposScreen(Screen[None]):
     """Known repositories, latest scan first. Enter opens the latest snapshot."""
 
@@ -723,8 +775,11 @@ class ReposScreen(Screen[None]):
         Binding("q", "app.quit", "Quit"),
         Binding("enter", "open", "Open", show=True),
         Binding("slash", "search", "Search"),
-        Binding("n", "new_scan", "Scan repo"),
+        Binding("n", "new_scan", "Scan repo or org"),
         Binding("p", "pin", "Pin"),
+        Binding("o", "cycle_owner", "Owner"),
+        Binding("e", "toggle_empty", "Without skills"),
+        Binding("x", "stop_scan", "Stop org scan", show=False),
         Binding("escape", "cancel", "Cancel", show=False),
         Binding("j", "cursor(1)", "Down", show=False),
         Binding("k", "cursor(-1)", "Up", show=False),
@@ -736,8 +791,13 @@ class ReposScreen(Screen[None]):
         self.store_dir = store_dir
         self.query_text = ""
         self.scanning = False
+        self.owner: str | None = None  # owner_key filter
+        self.show_empty = False  # repositories whose latest snapshot has no entries
+        self.cancel: threading.Event | None = None  # set while an organization scan runs
+        self._org_timer: Timer | None = None
         self.repos: list[list[store.Loaded]] = []
         self.rows: list[list[store.Loaded]] = []
+        self.orgs: dict[str, OrgScan] = {}
         self.favorites_path = favorites.default_path(store_dir)
         self.favorites = favorites.load_or_empty(self.favorites_path, self._favorites_warnings)
         self._load(db)
@@ -748,16 +808,26 @@ class ReposScreen(Screen[None]):
             key=lambda items: items[-1].snapshot.scan.scanned_at,
             reverse=True,
         )
+        self.orgs = store.latest_orgs(store.orgs_dir(self.store_dir))
+
+    def owners(self) -> list[str]:
+        keys = {owner_key(items[-1].snapshot.source.repo_key) for items in self.repos}
+        return sorted(keys | set(self.orgs))
 
     def _header(self) -> Text:
+        owner = f"  ·  owner {_s(self.owner)}" if self.owner else ""
         return Text(
-            f"skill-atlas  ·  {len(self.repos)} repositories  ·  {self.store_dir}", style="bold"
+            f"skill-atlas  ·  {len(self.repos)} repositories{owner}  ·  {self.store_dir}",
+            style="bold",
         )
 
     def compose(self) -> ComposeResult:
         yield Static(self._header(), id="header")
         yield Input(
-            placeholder="scan: GitHub URL, owner/repo or local path (Enter to scan, Esc to cancel)",
+            placeholder=(
+                "scan: GitHub URL, owner/repo, local path or https://github.com/<org> "
+                "(Enter to scan, Esc to cancel)"
+            ),
             id="scan-target",
         )
         with Horizontal():
@@ -777,14 +847,30 @@ class ReposScreen(Screen[None]):
         for w in self._favorites_warnings:
             self.notify(sanitize_line(w), severity="warning")
 
+    def _scope(self) -> list[list[store.Loaded]]:
+        return [
+            items
+            for items in self.repos
+            if self.owner is None or owner_key(items[-1].snapshot.source.repo_key) == self.owner
+        ]
+
     def refresh_rows(self) -> None:
         table = self.query_one("#repos", DataTable)
         table.clear()
         needle = self.query_text.lower()
+        matching = [
+            items for items in self._scope() if needle in items[-1].snapshot.source.repo_key.lower()
+        ]
+        # A pinned repository stays visible even without skills.
         self.rows = pinned_first(
-            (i for i in self.repos if needle in i[-1].snapshot.source.repo_key.lower()),
+            (
+                i
+                for i in matching
+                if self.show_empty or i[-1].snapshot.skills or self.favorites.any_repo_pinned(i)
+            ),
             self.favorites.any_repo_pinned,
         )
+        hidden = len(matching) - len(self.rows)
         for i, items in enumerate(self.rows):
             snap = items[-1].snapshot
             sha = (snap.source.commit_sha or "")[:8] or "—"
@@ -800,10 +886,15 @@ class ReposScreen(Screen[None]):
             )
         self.show_repo(self.rows[0] if self.rows else None)
         if not self.scanning:
-            self.set_status(
-                f"{len(self.rows)}/{len(self.repos)} shown · Enter opens the latest snapshot"
-                " · n scans a new repository · p pins"
-            )
+            parts = [f"{len(self.rows)}/{len(self.repos)} shown"]
+            if hidden:
+                parts.append(f"{hidden} without skills hidden (e shows)")
+            parts += [
+                "Enter opens the latest snapshot",
+                "n scans a repository or organization",
+                "p pins",
+            ]
+            self.set_status(" · ".join(parts))
 
     def set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(Text(text))
@@ -813,12 +904,16 @@ class ReposScreen(Screen[None]):
         if items is not None:
             view = repo_view(items)
         elif self.repos:
-            view = Text("No repositories match the search.", style="dim")
+            view = Text("No repositories match the search and filters.", style="dim")
         else:
             view = Text(
-                f"No snapshots in {self.store_dir}.\nPress n to scan a repository.",
+                f"No snapshots in {self.store_dir}.\n"
+                "Press n to scan a repository or an organization.",
                 style="dim",
             )
+        report = self.orgs.get(self.owner) if self.owner else None
+        if report is not None:
+            view = Group(org_view(report), Text(""), view)
         self.query_one("#details-view", Static).update(view)
 
     def current(self) -> list[store.Loaded] | None:
@@ -867,7 +962,15 @@ class ReposScreen(Screen[None]):
     def _scan_thread(self, target: str) -> None:
         # Runs in a worker thread: touch widgets only through call_from_thread.
         from skill_atlas.scan import ScanRequest, run_scan
+        from skill_atlas.target import OrgTarget, parse_target
 
+        try:
+            parsed: Target | None = parse_target(target)
+        except AtlasError:
+            parsed = None  # run_scan reports it
+        if isinstance(parsed, OrgTarget):
+            self._org_thread(parsed)
+            return
         call = self.app.call_from_thread
         progress = StatusProgress(lambda text: call(self.set_status, f"scanning · {text}"))
         try:
@@ -880,6 +983,79 @@ class ReposScreen(Screen[None]):
             call(self._scan_failed, f"unexpected error: {exc!r}")
             return
         call(self._scan_finished, outcome.snapshot.source.repo_key, outcome.cache_hit)
+
+    def _org_thread(self, target: OrgTarget) -> None:
+        from skill_atlas.org import OrgRequest, run_org_scan
+
+        call = self.app.call_from_thread
+        cancel = threading.Event()
+        self.cancel = cancel
+        progress = OrgStatusProgress()
+        call(self._watch_org, progress)
+        try:
+            outcome = run_org_scan(
+                OrgRequest(owner=target.owner, host=target.host),
+                store_dir=self.store_dir,
+                progress=progress,
+                cancel=cancel,
+            )
+        except AtlasError as exc:
+            call(self._scan_failed, str(exc))
+            return
+        except Exception as exc:  # a crash here must not take the whole TUI down
+            call(self._scan_failed, f"unexpected error: {exc!r}")
+            return
+        finally:
+            self.cancel = None
+            call(self._unwatch_org)
+        call(self._org_finished, outcome.report)
+
+    def _watch_org(self, progress: OrgStatusProgress) -> None:
+        self._org_timer = self.set_interval(
+            0.2, lambda: self.set_status(f"scanning · {progress.text} · x stops")
+        )
+
+    def _unwatch_org(self) -> None:
+        if self._org_timer is not None:
+            self._org_timer.stop()
+            self._org_timer = None
+
+    def _org_finished(self, report: OrgScan) -> None:
+        self.scanning = False
+        self._load(aggregate.Store.open(self.store_dir))
+        self.owner = report.owner_key
+        self.show_empty = False
+        self.query_text = ""
+        search = self.query_one("#search", Input)
+        search.value = ""
+        search.remove_class("visible")
+        self.query_one("#header", Static).update(self._header())
+        self.refresh_rows()
+        o = org_summary(report)
+        failed = f", {len(o['failures'])} failed" if o["failures"] else ""
+        self.notify(
+            f"{sanitize_line(report.owner)}: {o['selected']} repositories, "
+            f"{o['with_skills']} with skills{failed}",
+            title=f"Organization scan {report.status}",
+            severity="information" if report.status == "complete" else "warning",
+            timeout=10,
+        )
+
+    def action_stop_scan(self) -> None:
+        if self.cancel is None:
+            return
+        self.cancel.set()
+        self.notify("Stopping after the repositories in progress; saved snapshots are kept.")
+
+    def action_cycle_owner(self) -> None:
+        owners: list[str | None] = [None, *self.owners()]
+        self.owner = owners[(owners.index(self.owner) + 1) % len(owners)]
+        self.query_one("#header", Static).update(self._header())
+        self.refresh_rows()
+
+    def action_toggle_empty(self) -> None:
+        self.show_empty = not self.show_empty
+        self.refresh_rows()
 
     def _scan_failed(self, message: str) -> None:
         self.scanning = False
@@ -926,7 +1102,8 @@ class ReposScreen(Screen[None]):
             self.notify(sanitize_line(str(exc)), title="Cannot pin", severity="error")
             return
         self.refresh_rows()
-        self.query_one("#repos", DataTable).move_cursor(row=self.rows.index(items))
+        if items in self.rows:  # an unpinned repository without skills may be hidden now
+            self.query_one("#repos", DataTable).move_cursor(row=self.rows.index(items))
 
     def action_search(self) -> None:
         search = self.query_one("#search", Input)

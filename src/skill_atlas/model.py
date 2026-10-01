@@ -174,3 +174,69 @@ class Snapshot(_Model):
     plugins: list[Plugin] = Field(default_factory=list)
     skills: list[Skill] = Field(default_factory=list)
     stats: Stats = Field(default_factory=Stats)
+
+
+# --- organization scans (SPEC section 3.4) ---------------------------------------------
+
+OrgRepoStatus = Literal["scanned", "unchanged", "empty", "failed", "pending"]
+OrgScanStatus = Literal["complete", "partial", "stopped", "interrupted"]
+ORG_REPO_STATUSES: tuple[OrgRepoStatus, ...] = (
+    "scanned",
+    "unchanged",
+    "empty",
+    "failed",
+    "pending",
+)
+
+
+class OrgRepo(_Model):
+    repo_key: str
+    full_name: str
+    status: OrgRepoStatus
+    snapshot: str | None = None  # file name in the snapshot store
+    commit_sha: str | None = None
+    skills: int | None = None
+    agents: int | None = None
+    error: str | None = None
+
+
+class OrgOptions(_Model):
+    include_archived: bool = False
+    include_forks: bool = False
+    match: list[str] = Field(default_factory=list)
+    limit: int | None = None
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    force: bool = False
+
+
+class OrgScan(_Model):
+    """One organization scan: which repositories it saw and how each one ended.
+
+    Snapshots stay per repository; this report only links them. Immutable, like them.
+    """
+
+    schema_version: Literal[1] = 1
+    id: str
+    started_at: str
+    finished_at: str
+    duration_ms: int
+    tool_version: str
+    host: str
+    owner: str  # the login as GitHub spells it
+    owner_type: Literal["organization", "user"]
+    owner_key: str  # `<host>/<owner>` in lower case: the prefix of its repo keys
+    status: OrgScanStatus
+    message: str | None = None
+    options: OrgOptions
+    listed: int = 0
+    skipped: dict[str, int] = Field(default_factory=dict)  # archived, fork, name, limit
+    api_requests: int = 0
+    repos: list[OrgRepo] = Field(default_factory=list)
+
+    def count(self, status: OrgRepoStatus) -> int:
+        return sum(1 for r in self.repos if r.status == status)
+
+    @property
+    def with_skills(self) -> int:
+        return sum(1 for r in self.repos if (r.skills or 0) + (r.agents or 0) > 0)

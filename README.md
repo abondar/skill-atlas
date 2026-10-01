@@ -30,6 +30,28 @@ Private repositories need `GITHUB_TOKEN`, `GH_TOKEN` or a logged-in `gh`.
 Scanning the same clean commit again reuses the stored snapshot; `--force` writes a new one.
 Finding zero skills is a success (exit code 0).
 
+## Scan an organization
+
+```bash
+skill-atlas scan --org anthropics                  # every repository of an organization or user
+skill-atlas scan https://github.com/anthropics     # the same
+skill-atlas scan --org acme --include-archived --include-forks --match 'skills-*' --limit 50
+skill-atlas scan --org acme --wait                 # wait for the API rate limit to reset
+skill-atlas scan --org acme --plain                # one line per repository
+```
+
+Each repository gets its own snapshot as soon as it is scanned, and a report of the whole
+run goes to `$SKILL_ATLAS_HOME/orgs/`. Archived repositories and forks are skipped unless
+asked for. A repository whose `pushed_at` matches its latest snapshot costs no API request;
+a changed one costs two (commit and tree), since file contents come from
+`raw.githubusercontent.com`. A first pass over 549 HashiCorp repositories took 1111
+requests; a second pass over an unchanged organization costs only the listing.
+
+A failed repository does not stop the scan: it is listed in the report and the exit code is
+6. On a rate limit the scan stops with exit code 4 (or waits with `--wait`); run the same
+command again to continue, saved snapshots are reused. `--jobs N` (default 4, at most 8)
+scans repositories in parallel.
+
 ## What counts as a skill
 
 | Detected | Kind |
@@ -57,7 +79,9 @@ dropped, so `g` in the TUI or `skills --category test` shows it without a new sc
 `skill-atlas --web` opens a web app on `127.0.0.1`: a dashboard of repository cards, a
 repository page with skill cards, relevance and category filters, grouped copies, a skill
 side panel (content, locations, files), scan history, a cross-repository skill search, and a
-scan dialog with step-by-step progress. Light and dark themes follow the system. `--web-port N` fixes the port, `--no-browser` only prints
+scan dialog with step-by-step progress. An organization URL in the scan dialog scans all its
+repositories; the dashboard then filters by that owner, shows the organization scan with its
+failures, and hides repositories without skills until you ask for them. Light and dark themes follow the system. `--web-port N` fixes the port, `--no-browser` only prints
 the URL. The URL carries a one-time token that the page exchanges for a `SameSite=Strict`
 cookie; the server also checks the `Host` header and sends a strict CSP.
 
@@ -80,7 +104,7 @@ Snapshots live in `$SKILL_ATLAS_HOME/scans/` (default `~/.local/share/skill-atla
 one flat, time-sortable file per scan.
 
 ```bash
-skill-atlas                                        # TUI: repositories -> snapshot -> skills; n scans a new repo
+skill-atlas                                        # TUI: repositories -> snapshot -> skills; n scans a new repo or org
 skill-atlas --web                                  # the same in the browser (localhost, token in the URL)
 skill-atlas repos                                  # known repositories, latest scan each
 skill-atlas skills --category test                 # relevant (default), auxiliary, all, or one category
@@ -100,7 +124,8 @@ immutable. The TUI (`p`) and the web UI (the pin button on every card) change th
 
 `j/k` move · `/` search · `g` category · `f` kind · `t` type · `c` compliance · `d` group copies · `p` pin ·
 `1`–`8` tabs (6 = how the snapshot was made, 7 = similar skills, 8 = other repositories) · `o` open on GitHub · `e` export ·
-`Enter` open repository · `n` scan a new repository · `Esc` back · `q` quit
+`Enter` open repository · `n` scan a new repository or organization · `o` filter by owner ·
+`e` show repositories without skills · `x` stop an organization scan · `Esc` back · `q` quit
 
 Identical copies of one skill in several directories (same kind, name and content)
 show as one row with `+N` in the `copies` column. Snapshots keep every copy.

@@ -11,6 +11,8 @@ from skill_atlas.errors import UsageError
 
 _SHORT = re.compile(r"^(?P<owner>[A-Za-z0-9][A-Za-z0-9-]*)/(?P<name>[A-Za-z0-9._-]+)$")
 _SSH = re.compile(r"^git@(?P<host>[^:]+):(?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$")
+# GitHub logins: letters, digits and `-`; Enterprise adds `_` for managed users.
+LOGIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
 @dataclass(frozen=True)
@@ -28,7 +30,22 @@ class GitHubTarget:
     tree_segments: list[str] = field(default_factory=list)
 
 
-Target = LocalTarget | GitHubTarget
+@dataclass(frozen=True)
+class OrgTarget:
+    """Every repository of an organization or a user (SPEC section 3.4)."""
+
+    host: str
+    owner: str
+
+
+Target = LocalTarget | GitHubTarget | OrgTarget
+
+
+def org_target(owner: str, host: str = "github.com") -> OrgTarget:
+    owner = owner.strip().strip("/")
+    if not LOGIN.match(owner):
+        raise UsageError(f"not a GitHub organization or user name: {owner!r}")
+    return OrgTarget(host.lower(), owner)
 
 
 def parse_target(raw: str, host: str = "github.com") -> Target:
@@ -47,10 +64,15 @@ def parse_target(raw: str, host: str = "github.com") -> Target:
     raise UsageError(f"cannot parse target {raw!r}: expected a path, URL or owner/repo")
 
 
-def _parse_url(raw: str) -> GitHubTarget:
+def _parse_url(raw: str) -> GitHubTarget | OrgTarget:
     parts = urlsplit(raw)
     host = (parts.hostname or "").lower()
     segs = [unquote(s) for s in parts.path.split("/") if s]
+    # https://github.com/<owner> and https://github.com/orgs/<owner>/... name an account.
+    if host and len(segs) == 1:
+        return org_target(segs[0], host)
+    if host and len(segs) >= 2 and segs[0] == "orgs":
+        return org_target(segs[1], host)
     if not host or len(segs) < 2:
         raise UsageError(f"cannot parse repository URL {raw!r}")
     owner, name = segs[0], segs[1].removesuffix(".git")

@@ -443,3 +443,29 @@ dialog.modal::backdrop { background: rgb(10 12 16 / 0.45); backdrop-filter: blur
   .drawer-head, .drawer-body { padding-left: 16px; padding-right: 16px; }
 }
 .callout.notice { margin-bottom: 20px; }
+
+/* --- organizations ----------------------------------------------------------- */
+
+.org-panel { margin-bottom: 24px; }
+.org-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.org-head .grow { flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+.org-head .sub { color: var(--muted); font-size: 12.5px; font-weight: 400; margin-top: 2px; }
+.org-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 20px; margin: 0; }
+.org-counts dt { color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.org-counts dd { margin: 2px 0 0; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.org-counts .hint { color: var(--muted); font-size: 12px; }
+.org-panel .callout { margin-top: 14px; }
+details.org-failures { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+details.org-failures summary { cursor: pointer; padding: 8px 12px; font-weight: 600; color: var(--bad); }
+details.org-failures ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; border-top: 1px solid var(--border); }
+details.org-failures li { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+details.org-failures li:last-child { border-bottom: none; }
+details.org-failures .error { color: var(--muted); overflow-wrap: anywhere; }
+.org-progress { display: grid; gap: 10px; margin-top: 14px; }
+.org-progress .callout, .org-progress details.org-failures { margin-top: 0; }
+.org-line { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.org-line .time { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.org-progress .hint { margin: 0; }
+.org-active { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }

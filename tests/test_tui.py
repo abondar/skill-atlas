@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 from textual.widgets import DataTable, Static
 
@@ -40,7 +42,9 @@ def evil_snapshot(tmp_path: Path) -> Snapshot:
 
 
 def render(renderable: object) -> str:
-    console = Console(width=120, record=True, color_system="truecolor", force_terminal=True)
+    console = Console(
+        width=120, record=True, color_system="truecolor", force_terminal=True, file=io.StringIO()
+    )
     console.print(renderable)
     return console.export_text(styles=True)
 
@@ -179,6 +183,9 @@ def test_browser_lists_repos_and_opens_snapshot(tmp_path: Path) -> None:
             repos = app.screen
             assert isinstance(repos, ReposScreen)
             table = repos.query_one("#repos", DataTable)
+            assert table.row_count == 1  # the repository without skills is hidden
+            assert "1 without skills hidden" in str(repos.query_one("#status", Static).render())
+            await pilot.press("e")
             assert table.row_count == 2
             await pilot.press("slash", *"other", "enter")
             assert table.row_count == 1
@@ -248,7 +255,7 @@ def test_browser_scan_failure_keeps_the_list(tmp_path: Path) -> None:
         async with app.run_test(size=(140, 40)) as pilot:
             repos = app.screen
             assert isinstance(repos, ReposScreen)
-            await pilot.press("n", *"not a target", "enter")
+            await pilot.press("e", "n", *"not a target", "enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert not repos.scanning
@@ -257,6 +264,46 @@ def test_browser_scan_failure_keeps_the_list(tmp_path: Path) -> None:
             await pilot.press("q")
 
     asyncio.run(scenario())
+
+
+def test_browser_scans_an_organization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import respx
+
+    from tests.github_fakes import FakeOrg, populate
+
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    fake = FakeOrg()
+    populate(fake, 4, with_skills=1)
+    fake.broken.add("repo-003")
+    scans = saved_store(tmp_path)
+
+    async def scenario() -> None:
+        app = BrowserApp(aggregate.Store.open(scans), scans)
+        async with app.run_test(size=(160, 50)) as pilot:
+            repos = app.screen
+            assert isinstance(repos, ReposScreen)
+            await pilot.press("n", *"https://github.com/acme", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not repos.scanning
+            assert repos.owner == "github.com/acme"  # the list shows the organization
+            table = repos.query_one("#repos", DataTable)
+            assert table.row_count == 1  # repo-000; the others have no skills
+            details = render(repos.query_one("#details-view", Static).content)
+            assert "organization Acme" in details and "partial" in details
+            assert "Acme/repo-003: " in details
+            await pilot.press("e")
+            assert table.row_count == 3
+            await pilot.press("o")  # next owner: the local repository
+            assert repos.owner is not None and repos.owner != "github.com/acme"
+            await pilot.press("o", "o")  # github.com/o, then all owners again
+            assert repos.owner is None
+            assert table.row_count == 5
+            await pilot.press("q")
+
+    with respx.mock(assert_all_called=False) as router:
+        fake.install(router)
+        asyncio.run(scenario())
 
 
 def test_pins_come_first_on_both_screens(tmp_path: Path) -> None:
@@ -272,6 +319,7 @@ def test_pins_come_first_on_both_screens(tmp_path: Path) -> None:
             repos = app.screen
             assert isinstance(repos, ReposScreen)
             table = repos.query_one("#repos", DataTable)
+            await pilot.press("e")  # show the repository without skills too
             before = names(table)
             table.move_cursor(row=1)
             await pilot.press("p")
@@ -280,6 +328,13 @@ def test_pins_come_first_on_both_screens(tmp_path: Path) -> None:
             assert table.cursor_row == 0  # the cursor follows the pinned repository
             await pilot.press("p")
             assert names(table) == before
+            table.move_cursor(row=names(table).index("github.com/o/other"))
+            await pilot.press("p")  # pin the repository without skills
+            await pilot.press("e")  # hide repositories without skills: the pinned one stays
+            assert "github.com/o/other" in names(table)
+            assert table.cursor_row == names(table).index("github.com/o/other")
+            await pilot.press("p")  # unpinned, it is hidden again
+            assert "github.com/o/other" not in names(table)
             local = next(i for i, items in enumerate(repos.rows) if items[-1].snapshot.stats.skills)
             table.move_cursor(row=local)
             await pilot.press("enter")

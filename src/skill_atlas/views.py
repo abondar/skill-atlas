@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import Any
 from urllib.parse import quote
 
-from skill_atlas.model import Skill, Snapshot
+from skill_atlas.model import ORG_REPO_STATUSES, OrgScan, Skill, Snapshot
 
 
 def dup_key(s: Skill) -> tuple[str | None, ...]:
@@ -69,3 +70,44 @@ def pin_target(states: Iterable[bool]) -> bool:
     A row is pinned when any entry is; toggling it pins or unpins every entry.
     """
     return not any(states)
+
+
+def owner_key(repo_key: str) -> str:
+    """`<host>/<owner>` of a repository key, the key of its organization scans."""
+    return repo_key.rsplit("/", 1)[0] if "/" in repo_key else repo_key
+
+
+def org_summary(report: OrgScan) -> dict[str, Any]:
+    """The latest organization scan of an owner, as both UIs show it."""
+    return {
+        "owner_key": report.owner_key,
+        "owner": report.owner,
+        "owner_type": report.owner_type,
+        "status": report.status,
+        "message": report.message,
+        "started_at": report.started_at,
+        "finished_at": report.finished_at,
+        "duration_ms": report.duration_ms,
+        "listed": report.listed,
+        "skipped": report.skipped,
+        "selected": len(report.repos),
+        "counts": {s: n for s in ORG_REPO_STATUSES if (n := report.count(s))},
+        "with_skills": report.with_skills,
+        "api_requests": report.api_requests,
+        "failures": [
+            {"full_name": r.full_name, "error": r.error or ""}
+            for r in report.repos
+            if r.status == "failed"
+        ],
+    }
+
+
+def org_counts_line(summary: dict[str, Any]) -> str:
+    skipped = ", ".join(f"{n} {k}" for k, n in sorted(summary["skipped"].items()))
+    counts = ", ".join(f"{n} {s}" for s, n in summary["counts"].items())
+    return (
+        f"{summary['listed']} listed"
+        + (f" ({skipped} skipped)" if skipped else "")
+        + f" · {summary['selected']} selected · {summary['with_skills']} with skills"
+        + (f" · {counts}" if counts else "")
+    )

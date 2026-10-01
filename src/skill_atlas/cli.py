@@ -15,11 +15,14 @@ from rich.text import Text
 
 from skill_atlas import __version__, aggregate, categories, favorites, store
 from skill_atlas.errors import AtlasError, StoreError, UsageError
-from skill_atlas.model import Snapshot
+from skill_atlas.model import ORG_REPO_STATUSES, OrgScan, Snapshot
+from skill_atlas.org import DEFAULT_JOBS, MAX_JOBS, NullOrgProgress, OrgRequest, run_org_scan
 from skill_atlas.plain import render as render_plain
-from skill_atlas.progress import ConsoleProgress, NullProgress
+from skill_atlas.plain import render_org as render_org_plain
+from skill_atlas.progress import ConsoleOrgProgress, ConsoleProgress, NullProgress
 from skill_atlas.sanitize import sanitize_line
 from skill_atlas.scan import ScanRequest, run_scan
+from skill_atlas.target import OrgTarget, org_target, parse_target
 
 app = typer.Typer(
     add_completion=False,
@@ -134,9 +137,61 @@ def print_summary(console: Console, snapshot: Snapshot, path: Path | None, cache
         console.print("snapshot not saved (--no-save)")
 
 
+def print_org_summary(console: Console, report: OrgScan, path: Path | None) -> None:
+    kind = "organization" if report.owner_type == "organization" else "user"
+    skipped = ", ".join(f"{n} {k}" for k, n in sorted(report.skipped.items()))
+    console.print(
+        Text(f"{sanitize_line(report.owner_key)} ({kind}): {report.status}", style="bold")
+    )
+    console.print(
+        f"{report.listed} repositories listed"
+        + (f", skipped: {skipped}" if skipped else "")
+        + f"; {len(report.repos)} selected"
+    )
+    counts = ", ".join(f"{n} {s}" for s in ORG_REPO_STATUSES if (n := report.count(s)))
+    console.print(
+        f"{report.with_skills} with skills · {counts or 'nothing to scan'} · "
+        f"{report.api_requests} API requests in {report.duration_ms / 1000:.1f}s"
+    )
+    found = [r for r in report.repos if (r.skills or 0) + (r.agents or 0)]
+    if found:
+        table = Table(box=None, header_style="bold cyan", pad_edge=False)
+        for col in ("repo", "skills", "agents", "status"):
+            table.add_column(col, justify="right" if col in ("skills", "agents") else "left")
+        for r in found:
+            table.add_row(_cell(r.full_name), str(r.skills), str(r.agents), r.status)
+        console.print(table)
+    for r in report.repos:
+        if r.status == "failed":
+            console.print(
+                Text(f"failed: {sanitize_line(r.full_name)}: {sanitize_line(r.error or '')}")
+            )
+    if report.message:
+        console.print(Text(sanitize_line(report.message)), style="yellow")
+    if path is not None:
+        console.print(Text(f"organization scan report: {path}"))
+
+
+def _scan_org(req: OrgRequest, *, plain: bool, quiet: bool) -> None:
+    progress = NullOrgProgress() if quiet else ConsoleOrgProgress(err)
+    outcome = run_org_scan(req, store_dir=store.scans_dir(), progress=progress)
+    if plain:
+        sys.stdout.write(render_org_plain(outcome.report, outcome.saved_path))
+    else:
+        print_org_summary(out, outcome.report, outcome.saved_path)
+    if outcome.exit_code:
+        raise typer.Exit(outcome.exit_code)
+
+
 @app.command()
 def scan(
-    target: Annotated[str, typer.Argument(help="GitHub URL, owner/repo, or local path.")],
+    target: Annotated[
+        str | None,
+        typer.Argument(
+            help="GitHub URL, owner/repo, or local path; https://github.com/<owner> "
+            "scans every repository of an organization or user."
+        ),
+    ] = None,
     ref: Annotated[str | None, typer.Option(help="Branch, tag or commit SHA.")] = None,
     path: Annotated[str | None, typer.Option(help="Scan only this subdirectory.")] = None,
     include: Annotated[
@@ -162,8 +217,114 @@ def scan(
     quiet: Annotated[
         bool, typer.Option("--quiet", "-q", help="Do not report progress on stderr.")
     ] = False,
+    org: Annotated[
+        str | None,
+        typer.Option(
+            "--org",
+            help="Scan every repository of this GitHub organization or user.",
+            rich_help_panel="Organization scan",
+        ),
+    ] = None,
+    include_archived: Annotated[
+        bool,
+        typer.Option(
+            "--include-archived",
+            help="Also scan archived repositories.",
+            rich_help_panel="Organization scan",
+        ),
+    ] = False,
+    include_forks: Annotated[
+        bool,
+        typer.Option(
+            "--include-forks", help="Also scan forks.", rich_help_panel="Organization scan"
+        ),
+    ] = False,
+    match: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--match",
+            help="Glob on the repository name, case-insensitive; repeatable.",
+            rich_help_panel="Organization scan",
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            help="Scan at most N repositories (by name).",
+            rich_help_panel="Organization scan",
+        ),
+    ] = None,
+    jobs: Annotated[
+        int | None,
+        typer.Option(
+            "--jobs",
+            "-j",
+            help=f"Repositories scanned at once, 1-{MAX_JOBS} (default {DEFAULT_JOBS}).",
+            rich_help_panel="Organization scan",
+        ),
+    ] = None,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            help="Wait for the API rate limit to reset instead of stopping.",
+            rich_help_panel="Organization scan",
+        ),
+    ] = False,
 ) -> None:
-    """Scan a repository, save a snapshot and open it in the TUI."""
+    """Scan a repository or an organization, save snapshots and open the result in the TUI."""
+    host = host.lower()
+    owner = None
+    if org is not None:
+        if target is not None:
+            raise UsageError("pass either a target or --org, not both")
+        owner = org_target(org, host).owner
+    elif target is None:
+        raise UsageError("missing target: a GitHub URL, owner/repo, a local path or --org")
+    else:
+        parsed = parse_target(target, host)
+        if isinstance(parsed, OrgTarget):
+            owner, host = parsed.owner, parsed.host
+    org_only = {
+        "--include-archived": include_archived,
+        "--include-forks": include_forks,
+        "--match": bool(match),
+        "--limit": limit is not None,
+        "--wait": wait,
+        "--jobs": jobs is not None,
+    }
+    if owner is not None:
+        repo_only = {
+            "--ref": ref is not None,
+            "--path": path is not None,
+            "--output": output is not None,
+            "--no-save": no_save,
+            "--with-body": with_body,
+        }
+        if bad := [k for k, used in repo_only.items() if used]:
+            raise UsageError(f"{', '.join(bad)}: not available for an organization scan")
+        jobs = DEFAULT_JOBS if jobs is None else jobs
+        if not 1 <= jobs <= MAX_JOBS:
+            raise UsageError(f"--jobs must be between 1 and {MAX_JOBS}")
+        org_req = OrgRequest(
+            owner=owner,
+            host=host,
+            include_archived=include_archived,
+            include_forks=include_forks,
+            match=match or [],
+            limit=limit,
+            include=include or [],
+            exclude=exclude or [],
+            force=force,
+            wait=wait,
+            jobs=jobs,
+        )
+        _scan_org(org_req, plain=plain, quiet=quiet)
+        return
+    if bad := [k for k, used in org_only.items() if used]:
+        raise UsageError(f"{', '.join(bad)}: only for an organization scan (--org)")
+    assert target is not None
     if plain and output == "-":
         raise UsageError("--plain and --output - both write to stdout; choose one")
     if output and output != "-" and Path(output).exists() and not force:
@@ -174,7 +335,7 @@ def scan(
         path=path,
         include=include or [],
         exclude=exclude or [],
-        host=host.lower(),
+        host=host,
         force=force,
     )
     progress = NullProgress() if quiet else ConsoleProgress(err)

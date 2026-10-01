@@ -9,11 +9,15 @@ prints one JSON line: {"url", "repos": {name: path}}. Runs until killed.
 Screenshots must not change between runs, so this process pins what a scan records:
 `scanned_at` comes from a fake clock, scan IDs from a counter, durations from a fake
 monotonic clock. The browser pins its own clock to FIXED_BROWSER_TIME (fixtures.ts).
+
+GitHub is faked in process (FakeGitHub): the organization `acme` and its repositories
+answer from memory, so an organization scan from the UI needs no network.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import itertools
 import json
 import os
@@ -23,8 +27,13 @@ import sys
 import threading
 import types
 from pathlib import Path
+from urllib.parse import unquote
 
-from skill_atlas import scan
+import httpx
+
+from skill_atlas import org, scan
+from skill_atlas.sources.base import git_blob_sha
+from skill_atlas.sources.github import GitHubClient
 from skill_atlas.web import Server, WebApp
 
 TOKEN = "e2e"
@@ -41,6 +50,9 @@ def pin_scan_clock() -> None:
     scan.new_scan_id = lambda: f"01E2E{next(ids):021d}"
     # Only scan.py sees this: each call advances 0.4 s, so durations are fixed.
     scan.time = types.SimpleNamespace(  # type: ignore[assignment,attr-defined]
+        monotonic=lambda: next(ticks) * 0.4, time=lambda: CLOCK_START.timestamp()
+    )
+    org.time = types.SimpleNamespace(  # type: ignore[assignment,attr-defined]
         monotonic=lambda: next(ticks) * 0.4, time=lambda: CLOCK_START.timestamp()
     )
 
@@ -168,6 +180,90 @@ def demo(root: Path) -> dict[str, Path]:
 FIXTURES = {"journey": (journey, ()), "demo": (demo, ("koog", "mps"))}
 
 
+# Repositories of the fake organization `acme`. None: the tree request fails with HTTP 500.
+ACME: dict[str, dict[str, str] | None] = {
+    "agents-kit": {
+        ".claude/skills/triage/SKILL.md": skill("triage", "Sorts new issues.", "Label them.\n"),
+        ".claude/agents/reviewer.md": "---\nname: reviewer\ndescription: Reviews.\n---\nRead.\n",
+    },
+    "platform": {
+        ".agents/skills/deploy/SKILL.md": skill("deploy", "Deploys a service.", "Ship it.\n"),
+    },
+    "docs-site": {"README.md": "# Docs\n"},
+    "website": {"index.html": "<p>hi</p>\n"},
+    "flaky-service": None,
+}
+ACME_ARCHIVED = ("legacy-tools",)
+
+
+class FakeGitHub:
+    """Just enough of the GitHub REST API and raw downloads for an organization scan."""
+
+    def __init__(self) -> None:
+        self.http = httpx.Client(transport=httpx.MockTransport(self.handle))
+
+    def client(self, host: str) -> GitHubClient:
+        return GitHubClient(host, None, http=self.http, sleep=lambda _: None)
+
+    @staticmethod
+    def sha(name: str) -> str:
+        return hashlib.sha1(name.encode()).hexdigest()
+
+    def listing(self) -> list[dict[str, object]]:
+        names = sorted([*ACME, *ACME_ARCHIVED])
+        return [
+            {
+                "name": n,
+                "full_name": f"acme/{n}",
+                "default_branch": "main",
+                "node_id": f"R_{n}",
+                "description": f"Acme {n.replace('-', ' ')}",
+                "stargazers_count": 3,
+                "forks_count": 0,
+                "visibility": "public",
+                "archived": n in ACME_ARCHIVED,
+                "fork": False,
+                "pushed_at": "2026-01-01T08:00:00Z",
+                "size": 10,
+            }
+            for n in names
+        ]
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        path = unquote(request.url.path)
+        if request.url.host == "raw.githubusercontent.com":
+            _, _owner, name, _sha, *rest = path.split("/")
+            content = (ACME.get(name) or {}).get("/".join(rest))
+            if content is None:
+                return httpx.Response(404, text="404: Not Found")
+            return httpx.Response(200, content=content.encode())
+        segs = path.strip("/").split("/")
+        if segs == ["users", "acme"]:
+            return httpx.Response(200, json={"login": "acme", "type": "Organization"})
+        if segs == ["orgs", "acme", "repos"]:
+            return httpx.Response(200, json=self.listing())
+        if len(segs) >= 5 and segs[:2] == ["repos", "acme"] and segs[2] in ACME:
+            name, tree_files = segs[2], ACME[segs[2]]
+            if segs[3] == "commits":
+                commit = {"committer": {"date": "2026-01-01T08:00:00Z"}}
+                return httpx.Response(200, json={"sha": self.sha(name), "commit": commit})
+            if segs[3:5] == ["git", "trees"]:
+                if tree_files is None:
+                    return httpx.Response(500, json={"message": "Server Error"})
+                tree = [
+                    {
+                        "path": rel,
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": git_blob_sha(text.encode()),
+                        "size": len(text.encode()),
+                    }
+                    for rel, text in sorted(tree_files.items())
+                ]
+                return httpx.Response(200, json={"sha": self.sha(name), "tree": tree})
+        return httpx.Response(404, json={"message": "Not Found"})
+
+
 def main() -> None:
     fixture, root = sys.argv[1], Path(sys.argv[2])
     shutil.rmtree(root, ignore_errors=True)
@@ -182,7 +278,8 @@ def main() -> None:
     for name in presaved:
         outcome = scan.run_scan(scan.ScanRequest(target=str(repos[name])), store_dir=scans)
         assert outcome.saved_path is not None
-    server = Server(("127.0.0.1", 0), WebApp(scans, token=TOKEN))
+    github = FakeGitHub()
+    server = Server(("127.0.0.1", 0), WebApp(scans, token=TOKEN, github=github.client))
     url = f"http://127.0.0.1:{server.server_address[1]}"
     print(json.dumps({"url": url, "token": TOKEN, "repos": {k: str(v) for k, v in repos.items()}}))
     sys.stdout.flush()
